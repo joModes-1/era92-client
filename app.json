@@ -1,0 +1,50 @@
+{
+  "expo": {
+    "name": "Car Wash Loyalty",
+    "slug": "carwash-loyalty",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.era92.carwash",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Workers scan a customer's QR code to start and settle a wash. The camera is only used while the scanner is open."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "package": "com.era92.carwash",
+      "permissions": [
+        "CAMERA"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Workers scan a customer's QR code to start and settle a wash. The camera is only used while the scanner is open.",
+          "microphonePermission": false,
+          "recordAudioAndroid": false
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 220,
+          "resizeMode": "contain",
+          "backgroundColor": "#E91E63"
+        }
+      ]
+    ]
+  }
+}
