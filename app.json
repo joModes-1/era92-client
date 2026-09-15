@@ -21,8 +21,11 @@
       },
       "package": "com.era92.carwash",
       "permissions": [
-        "CAMERA"
-      ]
+        "CAMERA",
+        "android.permission.CAMERA",
+        "android.permission.POST_NOTIFICATIONS"
+      ],
+      "versionCode": 1
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -44,7 +47,28 @@
           "resizeMode": "contain",
           "backgroundColor": "#E91E63"
         }
+      ],
+      "expo-updates",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/android-icon-monochrome.png",
+          "color": "#E91E63"
+        }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "aee78ccb-7c8e-4a22-9c81-30fce3ec6e8b"
+      }
+    },
+    "owner": "jomodes",
+    "updates": {
+      "url": "https://u.expo.dev/aee78ccb-7c8e-4a22-9c81-30fce3ec6e8b",
+      "fallbackToCacheTimeout": 0
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    }
   }
 }

@@ -92,11 +92,14 @@ export default function CashHandoverScreen() {
       const diff = n - heldBy(target);
       setTarget(null);
       await load();
+      // Not "their day is closed" — the worker carries on and a fresh shift
+      // opens straight away. Saying the day ended made a mid-shift handover
+      // read as though it had sent the worker home.
       alert(
         'Money received',
         diff === 0
-          ? `${target.worker_name}'s day is closed and the cash balances exactly.`
-          : `${target.worker_name}'s day is closed.\n\n${Math.abs(diff).toLocaleString()} UGX ${diff < 0 ? 'SHORT' : 'EXTRA'} — this shows on the Cash Variance report.`
+          ? `You have UGX ${n.toLocaleString()} from ${target.worker_name}. It balances exactly.\n\nThey can keep working — anything they take from now on is counted separately.`
+          : `You have UGX ${n.toLocaleString()} from ${target.worker_name}.\n\n${Math.abs(diff).toLocaleString()} UGX ${diff < 0 ? 'SHORT' : 'EXTRA'} — this shows on the Cash Variance report.`
       );
     } catch (e: any) {
       const msg = String(e?.message || '');
@@ -334,12 +337,24 @@ function ManagerView({
   shifts, refreshing, onRefresh, openCount,
   target, setTarget, counted, setCounted, notes, setNotes, saving, submit,
 }: any) {
-  const pending = shifts.filter((s: any) => s.status !== 'closed');
+  // A worker's day does not end at a handover: closing their shift settles
+  // the cash, and a fresh shift opens immediately so they can keep washing.
+  // That new shift then accrues its own cash, which is genuinely still with
+  // them — but showing it identically to "has not handed over at all" made a
+  // completed handover look like it had failed. These are separate states
+  // and the screen now says which is which.
   const received = shifts.filter((s: any) => s.status === 'closed');
+  const handedOverWorkerIds = new Set(received.map((s: any) => s.worker_id));
+
+  const pending = shifts.filter((s: any) => s.status !== 'closed');
+  // Cash earned since a handover earlier today, vs cash never handed over.
+  const sinceHandover = pending.filter((s: any) => handedOverWorkerIds.has(s.worker_id));
+  const notYetHandedOver = pending.filter((s: any) => !handedOverWorkerIds.has(s.worker_id));
+
   const owed = pending.reduce((sum: number, s: any) => sum + heldBy(s), 0);
   const collected = received.reduce((sum: number, s: any) => sum + Number(s.counted_cash_ugx || 0), 0);
 
-  const renderPending = (s: any) => {
+  const renderPending = (s: any, afterHandover = false) => {
     const held = heldBy(s);
     return (
       <Surface key={s.id} elevation="sm" style={styles.card}>
@@ -354,24 +369,41 @@ function ManagerView({
             </Text>
           </View>
           <Badge
-            label={s.status === 'pending_close' ? 'Ready to hand in' : 'Still working'}
-            tone={s.status === 'pending_close' ? 'warning' : 'success'}
+            label={
+              s.status === 'pending_close'
+                ? 'Ready to hand in'
+                : afterHandover
+                ? 'Since handover'
+                : 'Still working'
+            }
+            tone={s.status === 'pending_close' ? 'warning' : afterHandover ? 'info' : 'success'}
             dot
             small
           />
         </View>
 
         <View style={styles.amountRow}>
-          <Text style={styles.amountLabel}>SHOULD HAND IN</Text>
+          <Text style={styles.amountLabel}>
+            {afterHandover ? 'EARNED SINCE HANDOVER' : 'SHOULD HAND IN'}
+          </Text>
           <Text style={styles.amountValue}>UGX {ugx(held)}</Text>
         </View>
 
-        <GradientButton
-          title="I received the money"
-          onPress={() => openCount(s)}
-          icon="hand-holding-usd"
-          full
-        />
+        {/* The label has to describe the action being started, not claim it
+            already happened — "I received the money" read as a statement of
+            fact on a worker whose cash was still in their pocket. */}
+        {held > 0 ? (
+          <GradientButton
+            title="Receive money from worker"
+            onPress={() => openCount(s)}
+            icon="hand-holding-usd"
+            full
+          />
+        ) : (
+          <Text style={styles.nothingDue}>
+            Nothing to collect yet — no cash taken on this shift.
+          </Text>
+        )}
       </Surface>
     );
   };
@@ -386,7 +418,10 @@ function ManagerView({
           </View>
           <View style={styles.who}>
             <Text style={styles.name} numberOfLines={1}>{s.worker_name}</Text>
-            <Text style={styles.meta}>Handed in UGX {ugx(s.counted_cash_ugx)}</Text>
+            <Text style={styles.meta}>
+              You received UGX {ugx(s.counted_cash_ugx)}
+              {s.closed_at ? ` · ${new Date(s.closed_at).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}` : ''}
+            </Text>
           </View>
           {variance === 0 ? (
             <Badge label="Balanced" tone="success" small />
@@ -421,10 +456,20 @@ function ManagerView({
           </Surface>
         ) : (
           <>
-            {pending.length > 0 && (
+            {notYetHandedOver.length > 0 && (
               <View>
-                <SectionHeader title="Money still with workers" count={pending.length} icon="hourglass-half" />
-                <View style={{ gap: spacing.sm }}>{pending.map(renderPending)}</View>
+                <SectionHeader title="Money to collect" count={notYetHandedOver.length} icon="hourglass-half" />
+                <View style={{ gap: spacing.sm }}>{notYetHandedOver.map((x: any) => renderPending(x))}</View>
+              </View>
+            )}
+
+            {/* Kept apart from the above so a completed handover does not
+                look like it failed: this is new cash, earned after the
+                worker already handed in once today. */}
+            {sinceHandover.length > 0 && (
+              <View>
+                <SectionHeader title="Earned since handing in" count={sinceHandover.length} icon="redo" />
+                <View style={{ gap: spacing.sm }}>{sinceHandover.map((x: any) => renderPending(x, true))}</View>
               </View>
             )}
 
@@ -441,9 +486,9 @@ function ManagerView({
       <FormSheet
         visible={!!target}
         onClose={() => setTarget(null)}
-        title="Count the money"
+        title="Receive money"
         subtitle={target?.worker_name}
-        submitLabel="Confirm received"
+        submitLabel="Confirm I have the money"
         onSubmit={submit}
         submitting={saving}
       >
@@ -545,6 +590,10 @@ const styles = StyleSheet.create({
   hintText: { flex: 1, fontSize: font.xs, color: colors.textMuted, lineHeight: 17 },
 
   card: { gap: spacing.md },
+  nothingDue: {
+    fontSize: font.xs, color: colors.textMuted,
+    textAlign: 'center', paddingVertical: spacing.sm,
+  },
   head: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   avatar: {
     width: 38, height: 38, borderRadius: radii.full,

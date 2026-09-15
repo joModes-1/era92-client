@@ -1,7 +1,7 @@
 import React, { ReactNode } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  KeyboardAvoidingView, Platform, ScrollView, StatusBar,
+  KeyboardAvoidingView, Platform, ScrollView, StatusBar as RNStatusBar,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -26,25 +26,36 @@ export default function AuthShell({
 }) {
   return (
     <View style={styles.root}>
-      <StatusBar barStyle="light-content" />
+      {/* Status bar style is set once, globally, in App.tsx. */}
       <LinearGradient colors={[colors.ink[900], colors.ink[950]]} style={StyleSheet.absoluteFill as any} />
       <View style={styles.bloomPink} pointerEvents="none" />
       <View style={styles.bloomOrange} pointerEvents="none" />
 
       <SafeAreaView style={{ flex: 1 }}>
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+        {/* Pinned above the scroll content, not inside it: styles.scroll
+            centers its content vertically, so a back button placed as the
+            scroll's first child floated wherever that centered block landed
+            — the middle of the screen on any form short enough not to
+            scroll, not the top-left corner where a back affordance is
+            expected. Fixed to the top of the safe area, it stays in the same
+            spot regardless of form height or scroll position. */}
+        {onBack ? (
+          <TouchableOpacity onPress={onBack} style={styles.back} hitSlop={10} activeOpacity={0.7}>
+            <Icon name="arrow-left" size={12} color="rgba(255,255,255,0.8)" />
+            <Text style={styles.backText}>{backLabel}</Text>
+          </TouchableOpacity>
+        ) : null}
+
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={{ flex: 1 }}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : RNStatusBar.currentHeight ?? 0}
+        >
           <ScrollView
             contentContainerStyle={styles.scroll}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >
-            {onBack ? (
-              <TouchableOpacity onPress={onBack} style={styles.back} hitSlop={10} activeOpacity={0.7}>
-                <Icon name="arrow-left" size={12} color="rgba(255,255,255,0.8)" />
-                <Text style={styles.backText}>{backLabel}</Text>
-              </TouchableOpacity>
-            ) : null}
-
             <View style={styles.brand}>
               <LinearGradient
                 colors={colors.gradient}
@@ -104,7 +115,11 @@ const styles = StyleSheet.create({
   },
   scroll: { flexGrow: 1, justifyContent: 'center', padding: spacing.xl },
 
-  back: { flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: spacing.xl, alignSelf: 'flex-start' },
+  back: {
+    flexDirection: 'row', alignItems: 'center', gap: 7,
+    alignSelf: 'flex-start',
+    paddingHorizontal: spacing.xl, paddingTop: spacing.md, paddingBottom: spacing.sm,
+  },
   backText: { color: 'rgba(255,255,255,0.8)', fontSize: font.sm, fontWeight: weight.semibold },
 
   brand: { alignItems: 'center', marginBottom: spacing.xl },

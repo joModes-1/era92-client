@@ -54,8 +54,18 @@ export default function ChangePasswordScreen() {
     setLoading(true);
     try {
       await changePassword(current, newPwd);
+      // changePassword() clears must_change_password on the actor, and
+      // RootNavigator gates the forced-change stack on exactly that field,
+      // so this screen unmounts as a side effect of that one write —
+      // nothing here navigates away. It has to stay a single write: when
+      // the flag also lived in its own useState, the actor updated first
+      // and the flag a moment later, and a render landing between them
+      // kept this screen mounted with the password already changed, so
+      // logging out was the only way off it.
+      // AppAlertProvider is mounted above the navigator, so the alert
+      // survives this screen unmounting underneath it.
+      alert('Password updated', 'Your password has been changed.');
       if (canGoBack) {
-        alert('Password updated', 'Your password has been changed.');
         navigation.goBack();
       }
     } catch (e: any) {

@@ -133,6 +133,14 @@ export default function BranchesScreen() {
                       <Text style={styles.staffCount}>
                         <Text style={styles.staffNum}>{b.staff_count ?? 0}</Text> staff
                       </Text>
+                      {/* Suspended accounts are no longer counted above — but
+                          they still exist, so say so rather than making them
+                          vanish from the branch entirely. */}
+                      {Number(b.suspended_staff_count) > 0 && (
+                        <Text style={styles.suspendedNote}>
+                          +{b.suspended_staff_count} suspended
+                        </Text>
+                      )}
                     </View>
                   </Surface>
                 );
@@ -192,4 +200,5 @@ const styles = StyleSheet.create({
   },
   staffCount: { fontSize: font.sm, color: colors.textSecondary },
   staffNum: { fontWeight: weight.heavy, color: colors.text },
+  suspendedNote: { fontSize: font.micro, color: colors.textMuted, marginLeft: 4 },
 });

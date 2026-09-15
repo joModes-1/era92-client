@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, Switch } from 'react-native';
 import { api } from '../../api';
+import { useAuth } from '../../api/AuthContext';
 import { colors, radii, font, spacing, weight, tracking } from '../../theme';
 import Icon from '../../components/Icon';
 import ScreenHeader, { HeaderAction } from '../../components/ScreenHeader';
@@ -11,6 +12,14 @@ type Tab = 'vehicles' | 'services';
 
 export default function CatalogueScreen() {
   const alert = useAppAlert();
+  const { actor } = useAuth();
+  // A manager sees org-wide types plus their own branch's, but may only
+  // change the latter — the server enforces this; the UI reflects it so a
+  // manager is not offered a control that will simply fail.
+  const isManager = actor?.role === 'manager';
+  const branchId: string | undefined = actor?.branch_id;
+  const branchName: string | undefined = actor?.branch_name;
+  const canEdit = (item: any) => !isManager || item.branch_id === branchId;
   const [tab, setTab] = useState<Tab>('vehicles');
   const [vehicleClasses, setVehicleClasses] = useState<any[]>([]);
   const [services, setServices] = useState<any[]>([]);
@@ -106,7 +115,11 @@ export default function CatalogueScreen() {
     <View style={styles.container}>
       <ScreenHeader
         title="Catalogue"
-        subtitle={`${vehicleClasses.length} car types · ${services.length} wash types`}
+        subtitle={
+          isManager
+            ? `${branchName || 'Your branch'} · ${vehicleClasses.length} car types · ${services.length} wash types`
+            : `${vehicleClasses.length} car types · ${services.length} wash types`
+        }
         action={<HeaderAction icon="plus" onPress={() => setCreateVisible(true)} />}
       />
 
@@ -154,11 +167,14 @@ export default function CatalogueScreen() {
                     <View style={[styles.orderChip, !v.active && styles.orderChipOff]}>
                       <Text style={[styles.orderText, !v.active && styles.orderTextOff]}>{v.sort_order}</Text>
                     </View>
-                    <Text style={[styles.rowName, !v.active && styles.rowNameOff]} numberOfLines={1}>{v.name}</Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.rowName, !v.active && styles.rowNameOff]} numberOfLines={1}>{v.name}</Text>
+                      <ScopeTag item={v} isManager={isManager} />
+                    </View>
                     <Switch
                       value={v.active}
                       onValueChange={() => toggleActive(v, true)}
-                      disabled={busyId === v.id}
+                      disabled={busyId === v.id || !canEdit(v)}
                       trackColor={{ false: colors.border, true: colors.primary }}
                       thumbColor="#fff"
                     />
@@ -178,11 +194,14 @@ export default function CatalogueScreen() {
               {services.map((s: any) => (
                 <Surface key={s.id} elevation="sm" style={styles.svcCard}>
                   <View style={styles.svcHead}>
-                    <Text style={[styles.rowName, !s.active && styles.rowNameOff]} numberOfLines={1}>{s.name}</Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.rowName, !s.active && styles.rowNameOff]} numberOfLines={1}>{s.name}</Text>
+                      <ScopeTag item={s} isManager={isManager} />
+                    </View>
                     <Switch
                       value={s.active}
                       onValueChange={() => toggleActive(s, false)}
-                      disabled={busyId === s.id}
+                      disabled={busyId === s.id || !canEdit(s)}
                       trackColor={{ false: colors.border, true: colors.primary }}
                       thumbColor="#fff"
                     />
@@ -192,7 +211,7 @@ export default function CatalogueScreen() {
                     <TouchableOpacity
                       style={[styles.flag, s.is_default && styles.flagOnAccent]}
                       onPress={() => toggleDefault(s)}
-                      disabled={busyId === s.id || s.is_default}
+                      disabled={busyId === s.id || s.is_default || !canEdit(s)}
                       activeOpacity={0.7}
                     >
                       <Icon name="star" size={10} color={s.is_default ? colors.accent : colors.textMuted} solid={s.is_default} />
@@ -204,7 +223,7 @@ export default function CatalogueScreen() {
                     <TouchableOpacity
                       style={[styles.flag, s.earns_point && styles.flagOnSuccess]}
                       onPress={() => toggleEarnsPoint(s)}
-                      disabled={busyId === s.id}
+                      disabled={busyId === s.id || !canEdit(s)}
                       activeOpacity={0.7}
                     >
                       <Icon name="gift" size={10} color={s.earns_point ? colors.success : colors.textMuted} />
@@ -220,7 +239,9 @@ export default function CatalogueScreen() {
             <View style={styles.hint}>
               <Icon name="info-circle" size={11} color={colors.textMuted} />
               <Text style={styles.hintText}>
-                Add-ons like "Engine" should not count toward free washes — turn loyalty off for those.
+                {isManager
+                  ? 'Add-ons like "Engine" should not count toward free washes — turn loyalty off for those. Items marked shared belong to the whole organisation; only an org admin can change those.'
+                  : 'Add-ons like "Engine" should not count toward free washes — turn loyalty off for those.'}
               </Text>
             </View>
           </>
@@ -246,6 +267,21 @@ export default function CatalogueScreen() {
         />
       </FormSheet>
     </View>
+  );
+}
+
+/**
+ * Marks whether a catalogue item is shared org-wide or private to a branch.
+ * Only shown to managers: an org admin looking at an unfiltered list would
+ * get a tag on every row, which is noise rather than information.
+ */
+function ScopeTag({ item, isManager }: { item: any; isManager: boolean }) {
+  if (!isManager) return null;
+  const shared = item.branch_id === null;
+  return (
+    <Text style={[styles.scopeTag, shared ? styles.scopeShared : styles.scopeMine]}>
+      {shared ? 'SHARED · ORG-WIDE' : 'YOUR BRANCH'}
+    </Text>
   );
 }
 
@@ -293,7 +329,10 @@ const styles = StyleSheet.create({
   orderChipOff: { backgroundColor: colors.bgSunken },
   orderText: { fontSize: font.xs, fontWeight: weight.black, color: colors.primary },
   orderTextOff: { color: colors.textMuted },
-  rowName: { flex: 1, fontSize: font.regular, fontWeight: weight.bold, color: colors.text },
+  rowName: { fontSize: font.regular, fontWeight: weight.bold, color: colors.text },
+  scopeTag: { fontSize: font.micro, fontWeight: weight.heavy, letterSpacing: tracking.caps, marginTop: 1 },
+  scopeShared: { color: colors.textMuted },
+  scopeMine: { color: colors.primary },
   rowNameOff: { color: colors.textMuted, textDecorationLine: 'line-through' },
 
   svcCard: { gap: spacing.md },

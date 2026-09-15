@@ -3,16 +3,18 @@ import {
   View, Text, StyleSheet, TextInput, TextInputProps, TouchableOpacity,
   Modal, ScrollView, KeyboardAvoidingView, Platform,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, radii, font, spacing, weight, tracking, shadow } from '../../theme';
 import Icon from '../Icon';
 import GradientButton from '../GradientButton';
+import { AlertHost } from '../AppAlert';
 
 /**
  * Field — label + input with a real focus state. The focus ring is the thing
  * plain forms are always missing.
  */
 export function Field({
-  label, hint, error, required, prefix, style, ...props
+  label, hint, error, required, prefix, style, secureTextEntry, ...props
 }: TextInputProps & {
   label: string;
   hint?: string;
@@ -21,6 +23,14 @@ export function Field({
   prefix?: string;
 }) {
   const [focused, setFocused] = useState(false);
+  // Every password field in the app went through this component with
+  // secureTextEntry hardcoded true and no way to reveal it — Register,
+  // Forgot Password and Change Password all had this gap (Login had its own
+  // hand-rolled toggle instead of using Field at all). Owning the reveal
+  // state here fixes every one of them at once, with no change needed at
+  // any call site.
+  const [revealed, setRevealed] = useState(false);
+  const isPassword = !!secureTextEntry;
 
   return (
     <View style={styles.field}>
@@ -41,10 +51,21 @@ export function Field({
         <TextInput
           placeholderTextColor={colors.textMuted}
           {...props}
+          secureTextEntry={isPassword && !revealed}
           onFocus={(e) => { setFocused(true); props.onFocus?.(e); }}
           onBlur={(e) => { setFocused(false); props.onBlur?.(e); }}
           style={[styles.input, props.multiline && styles.inputMultiline, style]}
         />
+        {isPassword ? (
+          <TouchableOpacity
+            onPress={() => setRevealed((r) => !r)}
+            hitSlop={10}
+            style={styles.revealBtn}
+            accessibilityLabel={revealed ? 'Hide password' : 'Show password'}
+          >
+            <Icon name={revealed ? 'eye-slash' : 'eye'} size={15} color={colors.textMuted} />
+          </TouchableOpacity>
+        ) : null}
       </View>
 
       {error ? (
@@ -131,12 +152,29 @@ export function FormSheet({
   submitting?: boolean;
   danger?: boolean;
 }) {
+  const insets = useSafeAreaInsets();
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+      <KeyboardAvoidingView
+        // 'undefined' on Android left the keyboard to simply overlap the
+        // sheet with no resize or pan at all, burying whatever field was
+        // focused. 'height' shrinks the KeyboardAvoidingView itself so the
+        // sheet's ScrollView and footer buttons stay above the keyboard,
+        // matching what 'padding' already did on iOS.
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={{ flex: 1 }}
+      >
         <View style={styles.overlay}>
           <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={onClose} />
-          <View style={styles.sheet}>
+          <View
+            style={[
+              styles.sheet,
+              // Android draws edge-to-edge by default, so with no bottom
+              // inset here the Cancel/Save row sat flush against — and was
+              // partly covered by — the system gesture bar or 3-button nav.
+              { paddingBottom: spacing.xl + insets.bottom },
+            ]}
+          >
             <View style={styles.grabber} />
 
             <View style={styles.sheetHead}>
@@ -166,6 +204,12 @@ export function FormSheet({
           </View>
         </View>
       </KeyboardAvoidingView>
+
+      {/* An Android Modal is a separate native window: nothing outside it can
+          paint over it, whatever the zIndex. Hosting the alert here means a
+          validation message raised from this sheet appears ON the sheet
+          rather than being trapped behind it. Renders nothing when idle. */}
+      <AlertHost />
     </Modal>
   );
 }
@@ -195,6 +239,7 @@ const styles = StyleSheet.create({
   prefix: { fontSize: font.regular, fontWeight: weight.heavy, color: colors.textMuted },
   input: { flex: 1, paddingVertical: 13, fontSize: font.regular, color: colors.text, fontWeight: weight.medium },
   inputMultiline: { minHeight: 74, textAlignVertical: 'top' },
+  revealBtn: { padding: 2 },
   hint: { fontSize: font.xs, color: colors.textMuted },
   error: { fontSize: font.xs, color: colors.error, fontWeight: weight.semibold },
 

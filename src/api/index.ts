@@ -124,18 +124,66 @@ async function tryRefresh(): Promise<boolean> {
   return refreshInFlight;
 }
 
+/**
+ * A network failure never reaches the server, so there is no envelope to
+ * read — fetch() itself throws, with a message written for a developer, not
+ * whoever is staring at the login screen: "UnknownHostException: Unable to
+ * resolve host ... No address associated with hostname" for dead DNS, or
+ * "Network request failed" for no connection at all. This turns either into
+ * one plain sentence a user can act on. `err.code` matches the shape callers
+ * already read off a real server error (e.g. isTokenExpiredError elsewhere
+ * checks e.message, not e.code, so this stays consistent with that).
+ */
+function isNetworkError(e: any): boolean {
+  const msg = String(e?.message || e || '').toLowerCase();
+  return (
+    msg.includes('network request failed') ||
+    msg.includes('unknownhostexception') ||
+    msg.includes('no address associated with hostname') ||
+    msg.includes('failed to connect') ||
+    msg.includes('unable to resolve host') ||
+    msg.includes('connection refused') ||
+    msg.includes('timed out') ||
+    msg.includes('fetch failed')
+  );
+}
+
 async function rawReq(method: string, path: string, body?: any): Promise<any> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
 
-  const res = await fetch(`${BASE}${path}`, {
-    method,
-    headers,
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}${path}`, {
+      method,
+      headers,
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  } catch (e: any) {
+    if (isNetworkError(e)) {
+      const err = new Error('No internet connection.') as Error & { code?: string };
+      err.code = 'NETWORK_ERROR';
+      throw err;
+    }
+    throw e;
+  }
 
   const data = await res.json();
-  if (!data.ok) throw new Error(data.error?.message || 'Request failed');
+  if (!data.ok) {
+    // Carry the machine-readable parts of the error, not just its prose.
+    // Callers were reduced to regex-matching the message to tell one failure
+    // from another, and any structured detail the server sent — the name of
+    // the worker who started a job, for instance — was thrown away here.
+    const err = new Error(data.error?.message || 'Request failed') as Error & {
+      code?: string;
+      details?: any;
+      status?: number;
+    };
+    err.code = data.error?.code;
+    err.details = data.error?.details;
+    err.status = res.status;
+    throw err;
+  }
   return data.data;
 }
 
@@ -190,6 +238,12 @@ export const api = {
   changePasswordPlatform: (current: string, pwd: string) =>
     req('POST', '/auth/platform/change-password', { current_password: current, new_password: pwd }),
 
+  changePasswordClient: (current: string, pwd: string) =>
+    req('POST', '/auth/client/change-password', { current_password: current, new_password: pwd }),
+
+  registerDevice: (push_token: string, platform: 'ios' | 'android') =>
+    req('POST', '/me/device', { push_token, platform }),
+
   // Unified logout endpoint — works for staff/platform/client alike since it
   // revokes whichever refresh token is passed in, keyed off the JWT payload
   // rather than the caller's role.
@@ -216,12 +270,20 @@ export const api = {
     req('PATCH', `/branches/${id}`, data),
 
   // Catalogue
-  listVehicleClasses: () => req('GET', '/vehicle-classes'),
-  createVehicleClass: (data: { name: string; sort_order?: number }) => req('POST', '/vehicle-classes', data),
+  //
+  // Car types and wash types are either org-wide (branch_id null) or private
+  // to one branch. The server decides scope from the caller's role — a
+  // manager always gets their own branch and can only write there — so
+  // branch_id here is an org-admin convenience, not a security boundary.
+  listVehicleClasses: (branchId?: string) =>
+    req('GET', `/vehicle-classes${branchId ? '?branch_id=' + branchId : ''}`),
+  createVehicleClass: (data: { name: string; sort_order?: number; branch_id?: string | null }) =>
+    req('POST', '/vehicle-classes', data),
   updateVehicleClass: (id: string, data: { name?: string; sort_order?: number; active?: boolean }) =>
     req('PATCH', `/vehicle-classes/${id}`, data),
-  listServices: () => req('GET', '/services'),
-  createService: (data: { name: string; description?: string; is_default?: boolean; earns_point?: boolean }) =>
+  listServices: (branchId?: string) =>
+    req('GET', `/services${branchId ? '?branch_id=' + branchId : ''}`),
+  createService: (data: { name: string; description?: string; is_default?: boolean; earns_point?: boolean; branch_id?: string | null }) =>
     req('POST', '/services', data),
   updateService: (id: string, data: { name?: string; description?: string; is_default?: boolean; earns_point?: boolean; active?: boolean }) =>
     req('PATCH', `/services/${id}`, data),
@@ -231,6 +293,13 @@ export const api = {
   getPriceMatrix: (branchId?: string) => req('GET', `/prices${branchId ? '?branch_id=' + branchId : ''}`),
   setOrgPrice: (data: { service_id: string; vehicle_class_id: string; price_ugx: number }) =>
     req('PUT', '/prices', data),
+  // Managers write here instead of setOrgPrice — the backend enforces a
+  // manager can only target their own branch_id, so a manager's price change
+  // never reaches other branches.
+  setBranchPrice: (branchId: string, data: { service_id: string; vehicle_class_id: string; price_ugx: number }) =>
+    req('PUT', `/prices/branch/${branchId}`, data),
+  deleteBranchPrice: (branchId: string, priceId: string) =>
+    req('DELETE', `/prices/branch/${branchId}/${priceId}`),
   bulkSetPrices: (prices: Array<{ service_id: string; vehicle_class_id: string; branch_id?: string; price_ugx: number }>) =>
     req('POST', '/prices/bulk', { prices }),
   getPriceHistory: (serviceId?: string, vehicleClassId?: string) => {
@@ -302,7 +371,8 @@ export const api = {
   // (e.g. they scanned their own start-token) — attachClient can't be reused
   // here since it refuses once a client is already linked.
   applyFreeWash: (id: string) => req('POST', `/washes/${id}/apply-free-wash`),
-  cancelWash: (id: string, reason: string) => req('POST', `/washes/${id}/cancel`, { reason }),
+  cancelWash: (id: string, reason: string, note?: string) =>
+    req('POST', `/washes/${id}/cancel`, { reason, note }),
   getWash: (id: string) => req('GET', `/washes/${id}`),
   listWashes: (params?: string) => req('GET', `/washes${params ? '?' + params : ''}`),
   getMyToday: () => req('GET', '/washes/mine/today'),
@@ -399,6 +469,29 @@ export const api = {
   correctWash: (id: string, data: any) => req('POST', `/washes/${id}/correct`, data),
   reverseWash: (id: string, reason: string) => req('POST', `/washes/${id}/reverse`, { reason }),
   resolveDispute: (id: string, data: any) => req('POST', `/washes/${id}/resolve-dispute`, data),
+
+  // Support — every role can report a problem; who can SEE what is decided
+  // server-side (own reports / own org / everything).
+  createIssue: (data: {
+    category: 'bug' | 'wrong_data' | 'cannot_do_my_job' | 'suggestion' | 'account_access' | 'other';
+    severity?: 'low' | 'normal' | 'high' | 'blocking';
+    subject: string;
+    body: string;
+    context?: Record<string, any>;
+  }) => req('POST', '/issues', data),
+  listIssues: (status?: string) => req('GET', `/issues${status ? '?status=' + status : ''}`),
+  // Org admins triage their own organisation's reports; platform admins
+  // triage anything. `escalate` hands one the org cannot fix to the platform
+  // team — rejected for a platform admin, who has nobody to escalate to.
+  updateIssue: (
+    id: string,
+    data: {
+      status: 'open' | 'in_progress' | 'resolved' | 'closed';
+      resolution?: string;
+      escalate?: boolean;
+      escalation_note?: string;
+    }
+  ) => req('PATCH', `/issues/${id}`, data),
 
   // Client
   clientLoyalty: () => req('GET', '/me/washes/loyalty'),

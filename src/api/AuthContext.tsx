@@ -33,7 +33,15 @@ const Ctx = createContext<AuthCtx>(null!);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [actor, setActorState] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [mustChangePassword, setMustChangePassword] = useState(false);
+
+  // Derived from the actor, never stored alongside it. Held as its own
+  // useState, this was a second copy of a fact the actor already carried,
+  // and the two were written by separate setters with an `await setActor()`
+  // between them. Any render landing in that gap saw a fresh actor with a
+  // stale flag — which is what kept the forced-change screen mounted after
+  // the password had already been changed, leaving logging out as the only
+  // way forward. One source of truth cannot drift from itself.
+  const mustChangePassword = !!actor?.must_change_password;
 
   useEffect(() => {
     (async () => {
@@ -41,7 +49,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const saved = await getActor();
       if (saved) {
         setActorState(saved);
-        setMustChangePassword(saved.must_change_password || false);
       }
       setLoading(false);
     })();
@@ -52,7 +59,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // dead error on whatever screen the person happened to be on.
     setSessionExpiredHandler(() => {
       setActorState(null);
-      setMustChangePassword(false);
     });
     return () => setSessionExpiredHandler(null);
   }, []);
@@ -70,7 +76,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const a = { ...me, type: 'staff', role: data.role, org_id: data.org_id, branch_id: data.branch_id, must_change_password: data.must_change_password };
         await setActor(a);
         setActorState(a);
-        setMustChangePassword(data.must_change_password || false);
       },
       async () => {
         const data = await api.loginPlatform(identifier, password);
@@ -78,7 +83,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const a = { type: 'platform', role: 'sysadmin', must_change_password: data.must_change_password };
         await setActor(a);
         setActorState(a);
-        setMustChangePassword(data.must_change_password || false);
       },
       async () => {
         const data = await api.loginClient(identifier, password);
@@ -87,7 +91,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const a = { ...me, type: 'client', role: 'client', must_change_password: false };
         await setActor(a);
         setActorState(a);
-        setMustChangePassword(false);
       },
     ];
 
@@ -108,21 +111,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await api.logout();
     await clearTokens();
     setActorState(null);
-    setMustChangePassword(false);
   };
 
   const changePassword = async (cur: string, pwd: string) => {
-    if (actor?.type === 'platform') {
-      await api.changePasswordPlatform(cur, pwd);
-    } else {
-      await api.changePassword(cur, pwd);
+    // Three actor types, three different tables and three different routes
+    // on the server — a client isn't 'staff' just because it isn't
+    // 'platform'. Sending a client's request to /auth/staff/change-password
+    // got a flat 403 there, which is what made changing a client's password
+    // look broken.
+    const data =
+      actor?.type === 'platform'
+        ? await api.changePasswordPlatform(cur, pwd)
+        : actor?.type === 'client'
+        ? await api.changePasswordClient(cur, pwd)
+        : await api.changePassword(cur, pwd);
+
+    // The server revokes every refresh token on a password change — including
+    // this session's. It hands back a replacement pair, and storing it is what
+    // keeps the user signed in; without this the next refresh fails and they
+    // are dumped on the login screen to re-type the password they just set.
+    if (data?.access_token && data?.refresh_token) {
+      await setTokens(data.access_token, data.refresh_token);
     }
-    if (actor) {
-      const updated = { ...actor, must_change_password: false };
-      await setActor(updated);
-      setActorState(updated);
-    }
-    setMustChangePassword(false);
+
+    // Clearing the flag on the actor is what dismisses the forced-change
+    // screen. Fall back to the stored actor rather than to `{}` — spreading
+    // an empty object would produce an actor with no type or role at all,
+    // which routes to the wrong drawer and fails the next authed call,
+    // dropping the person back to the login screen.
+    const base = actor || (await getActor());
+    if (!base) return;
+    const updated = { ...base, must_change_password: false };
+    await setActor(updated);
+    setActorState(updated);
   };
 
   const refreshActor = async () => {

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, TextInput, Modal, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, Modal } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../api/AuthContext';
 import { api } from '../../api';
 import { colors, radii, font, spacing, weight, tracking, shadow } from '../../theme';
@@ -7,9 +8,9 @@ import GradientButton from '../../components/GradientButton';
 import Badge from '../../components/Badge';
 import ScreenHeader, { HeaderStat } from '../../components/ScreenHeader';
 import Icon from '../../components/Icon';
-import { useAppAlert } from '../../components/AppAlert';
+import { useAppAlert, AlertHost } from '../../components/AppAlert';
 import ScannerSheet from '../../components/ScannerSheet';
-import { Surface, SectionHeader, EmptyState, SkeletonList, FormSheet, PillPicker } from '../../components/ui';
+import { Surface, SectionHeader, EmptyState, SkeletonList, FormSheet, PillPicker, Field } from '../../components/ui';
 
 const ugx = (n: any) => Number(n || 0).toLocaleString();
 
@@ -29,6 +30,7 @@ function minutesLabel(mins: any): string {
 
 export default function WorkerHome({ navigation }: any) {
   const { actor } = useAuth();
+  const insets = useSafeAreaInsets();
   const alert = useAppAlert();
   const [shift, setShift] = useState<any>(null);
   const [queue, setQueue] = useState<any>({ washing: [], ready: [] });
@@ -62,6 +64,27 @@ export default function WorkerHome({ navigation }: any) {
   const [handoverReason, setHandoverReason] = useState<string>('');
   const [handoverBusy, setHandoverBusy] = useState(false);
   const pendingHandoverReasonRef = useRef<string | null>(null);
+  /** The pay token just scanned, kept for a handover retry. */
+  const pendingScanTokenRef = useRef<string | null>(null);
+
+  // Cancelling a job. The backend has always accepted this (and the org admin
+  // has a Cancellations report reading the results) but nothing in the app
+  // ever called it — so a car started by mistake had no way out, and that
+  // report could only ever be empty.
+  const [cancelTarget, setCancelTarget] = useState<any>(null);
+  const [cancelReason, setCancelReason] = useState('');
+  const [cancelNote, setCancelNote] = useState('');
+  const [cancelBusy, setCancelBusy] = useState(false);
+
+  // Mirrors the backend's cancelSchema enum exactly — a value it does not
+  // recognise is rejected outright.
+  const CANCEL_REASONS = [
+    { value: 'started_by_mistake', label: 'Started by mistake' },
+    { value: 'client_left', label: 'Customer left' },
+    { value: 'wrong_car_type_restart', label: 'Wrong car type — redoing it' },
+    { value: 'client_refused_price', label: 'Customer refused the price' },
+    { value: 'other', label: 'Other' },
+  ];
 
   const HANDOVER_REASONS = [
     { value: 'starter_off_shift', label: 'They went off shift' },
@@ -223,6 +246,44 @@ export default function WorkerHome({ navigation }: any) {
     setHandoverReason('');
   };
 
+  const requestCancel = (w: any) => {
+    setCancelTarget(w);
+    setCancelReason('');
+    setCancelNote('');
+  };
+
+  const confirmCancel = async () => {
+    if (!cancelTarget) return;
+    if (!cancelReason) {
+      alert('Pick a reason', 'Choose why this car is being cancelled.');
+      return;
+    }
+    // 'Other' with no explanation tells the manager nothing at all.
+    if (cancelReason === 'other' && cancelNote.trim().length < 3) {
+      alert('Say what happened', 'You picked Other — add a short note so your manager knows why.');
+      return;
+    }
+    setCancelBusy(true);
+    const w = cancelTarget;
+    try {
+      await api.cancelWash(w.id, cancelReason, cancelNote.trim() || undefined);
+      setCancelTarget(null);
+      await load();
+      alert('Car cancelled', `#${w.job_no} has been cancelled. No payment is due.`);
+    } catch (e: any) {
+      const msg = String(e?.message || '');
+      if (e?.code === 'BAD_STATE' || /BAD_STATE|Cannot cancel/i.test(msg)) {
+        // Almost always because it was paid for on another device while this
+        // card was still on screen.
+        alert('Too late to cancel', 'This car has already been paid for. Ask a manager to reverse it instead.');
+        await load();
+      } else {
+        alert('Could not cancel', msg);
+      }
+    }
+    setCancelBusy(false);
+  };
+
   /** Reason chosen — dispatch to whichever settle action was actually requested. */
   const confirmHandover = async () => {
     if (!handoverTarget || !handoverAction) return;
@@ -240,9 +301,19 @@ export default function WorkerHome({ navigation }: any) {
     } else if (action === 'free') {
       await runFreeSettle(w, reason);
     } else {
-      // 'pay': the scanner needs to run next, with this reason attached to
-      // the settle call it eventually makes.
       pendingHandoverReasonRef.current = reason;
+
+      // If this handover was discovered BY scanning, the customer's code is
+      // already in hand — replay it rather than making them present the same
+      // QR a second time just to answer a question the worker was asked.
+      const scanned = pendingScanTokenRef.current;
+      if (scanned) {
+        await onPayScan(scanned);
+        return;
+      }
+
+      // Otherwise the worker tapped "Take payment" on a card, so the scanner
+      // still has to run to get a code at all.
       setScanTarget(w);
       setScanMode('pay');
     }
@@ -251,10 +322,16 @@ export default function WorkerHome({ navigation }: any) {
   /** Customer is paying — the pay token settles the job as verified. */
   const onPayScan = async (value: string) => {
     setScanBusy(true);
+    // Held so that, if the server comes back asking for a handover reason,
+    // the same token can be replayed once the reason is chosen. A pay token
+    // is one-shot but is only consumed on a SUCCESSFUL settle, so replaying
+    // a rejected one is safe.
+    pendingScanTokenRef.current = value;
     try {
       const handover_reason = pendingHandoverReasonRef.current || undefined;
       pendingHandoverReasonRef.current = null;
       await api.settleByToken({ pay_token: value, handover_reason });
+      pendingScanTokenRef.current = null;
       setScanMode(null);
       setScanTarget(null);
       await load();
@@ -266,12 +343,26 @@ export default function WorkerHome({ navigation }: any) {
           'This code is for a different car',
           'That customer\'s code belongs to another job. Check you scanned the code for the right car.'
         );
-      } else if (/HANDOVER_CONFIRM_REQUIRED/i.test(msg) && scanTarget) {
-        // Fallback in case a job's started_by_worker_id was stale client-side
-        // — the backend is always the source of truth for who started it.
-        const target = scanTarget;
+      } else if (e?.code === 'HANDOVER_CONFIRM_REQUIRED' || /HANDOVER_CONFIRM_REQUIRED/i.test(msg)) {
+        // This is the normal way a handover begins: the customer presents
+        // their code and it turns out a different worker started the car.
+        // The job is deliberately absent from this worker's list, so there
+        // is no card to fall back on — the server tells us who started it
+        // and which job it is, and that is enough to ask for a reason.
+        // (Previously this branch required scanTarget, which is only set
+        // when tapping a card you can already see, so scanning a colleague's
+        // job fell through to a generic "did not go through" error.)
+        const d = e?.details || {};
         setScanMode(null);
-        requestHandoverReason(target, 'pay');
+        requestHandoverReason(
+          scanTarget || {
+            id: d.wash_id,
+            job_no: d.job_no,
+            worker_name: d.starter_name,
+            _scannedToken: pendingScanTokenRef.current,
+          },
+          'pay'
+        );
         setScanBusy(false);
         return;
       } else {
@@ -441,6 +532,17 @@ export default function WorkerHome({ navigation }: any) {
     .sort(byLongestWait);
   const jobs = [...washingJobs, ...readyJobs];
 
+  // The queue is branch-wide on purpose — that is what lets one worker settle
+  // a car another started when the starter goes off shift. But showing every
+  // colleague's car in the same undifferentiated list made a brand-new worker
+  // open the app to six jobs that were not theirs, reading as work they were
+  // expected to collect on. Their own cars come first, and everyone else's sit
+  // in a clearly separate section they can still reach when a genuine handover
+  // is needed.
+  const myWashing = washingJobs.filter((w: any) => !startedBySomeoneElse(w));
+  const myReady = readyJobs.filter((w: any) => !startedBySomeoneElse(w));
+
+
   const renderJob = (w: any) => {
     const isReady = w._type === 'ready';
     const waitingTooLong = isReady && w.stale;
@@ -555,6 +657,21 @@ export default function WorkerHome({ navigation }: any) {
                 <Text style={styles.linkText}>Paid cash, no phone</Text>
               </TouchableOpacity>
             )}
+            {/* Only the worker who started a car can cancel it. Cancelling
+                someone else's is indistinguishable from destroying their
+                work, and unlike a handover there is no payment moment that
+                makes it legitimate. */}
+            {!notMine && (
+              <TouchableOpacity
+                style={styles.linkBtn}
+                disabled={busyId === w.id}
+                onPress={() => requestCancel(w)}
+                activeOpacity={0.6}
+              >
+                <Icon name="times-circle" size={10} color={colors.error} />
+                <Text style={[styles.linkText, { color: colors.error }]}>Cancel car</Text>
+              </TouchableOpacity>
+            )}
           </View>
         </View>
       </Surface>
@@ -661,8 +778,8 @@ export default function WorkerHome({ navigation }: any) {
         {/* ── Cars being washed ── follows the real workflow: a car is washed
             first, then paid for. ── */}
         <View>
-          <SectionHeader title="Cars being washed" count={washingJobs.length} icon="soap" />
-          {washingJobs.length === 0 ? (
+          <SectionHeader title="Cars being washed" count={myWashing.length} icon="soap" />
+          {myWashing.length === 0 ? (
             <Surface elevation="sm" padded="lg">
               <EmptyState
                 icon="car"
@@ -671,28 +788,66 @@ export default function WorkerHome({ navigation }: any) {
               />
             </Surface>
           ) : (
-            <View style={{ gap: spacing.sm }}>{washingJobs.map(renderJob)}</View>
+            <View style={{ gap: spacing.sm }}>{myWashing.map(renderJob)}</View>
           )}
         </View>
 
         {/* ── Waiting to be paid ── */}
-        {readyJobs.length > 0 && (
+        {myReady.length > 0 && (
           <View>
-            <SectionHeader title="Waiting to be paid" count={readyJobs.length} icon="hand-holding-usd" />
-            <View style={{ gap: spacing.sm }}>{readyJobs.map(renderJob)}</View>
+            <SectionHeader title="Waiting to be paid" count={myReady.length} icon="hand-holding-usd" />
+            <View style={{ gap: spacing.sm }}>{myReady.map(renderJob)}</View>
           </View>
         )}
+
+        {/* A colleague's cars are deliberately NOT listed here. A handover
+            starts from the customer: they present their code, you scan it,
+            and if you did not start that job the app asks why before it
+            settles. Browsing other people's work is not part of the flow. */}
 
         {/* No end-of-day controls here by design. Handing in cash is the
             manager's job on their Cash Handover screen — the worker just
             works, and their day rolls over automatically. */}
       </ScrollView>
 
+      {/* ── Cancel a car ── */}
+      <FormSheet
+        visible={!!cancelTarget}
+        onClose={() => setCancelTarget(null)}
+        title="Cancel this car"
+        subtitle={cancelTarget ? `#${cancelTarget.job_no} · ${cancelTarget.vehicle_class_name}` : undefined}
+        submitLabel="Cancel the car"
+        onSubmit={confirmCancel}
+        submitting={cancelBusy}
+      >
+        <Text style={styles.cancelWarn}>
+          The car is dropped from your list and no payment is taken. Your manager sees every
+          cancellation and the reason given.
+        </Text>
+
+        <PillPicker
+          label="Why is it being cancelled?"
+          value={cancelReason}
+          onChange={(v: any) => setCancelReason(v)}
+          options={CANCEL_REASONS as unknown as { value: string; label: string }[]}
+        />
+
+        <Field
+          label={cancelReason === 'other' ? 'What happened?' : 'Note'}
+          required={cancelReason === 'other'}
+          value={cancelNote}
+          onChangeText={setCancelNote}
+          placeholder="e.g. Customer changed their mind about the wash type"
+          multiline
+          style={{ marginBottom: 0 }}
+        />
+      </FormSheet>
+
       {/* ── Start wash sheet ── */}
       <Modal visible={washModalVisible} animationType="slide" transparent onRequestClose={() => setWashModalVisible(false)}>
         <View style={styles.modalOverlay}>
           <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={() => setWashModalVisible(false)} />
-          <View style={styles.sheet}>
+          <View style={[styles.sheet, { paddingBottom: spacing.xl + insets.bottom }]}>
             <View style={styles.grabber} />
             <Text style={styles.sheetTitle}>New car</Text>
 
@@ -776,6 +931,10 @@ export default function WorkerHome({ navigation }: any) {
             </View>
           </View>
         </View>
+
+        {/* "Choose a car type" and other validation fires from inside this
+            sheet — hosted here so it is not trapped behind it on Android. */}
+        <AlertHost />
       </Modal>
 
       {/* ── QR scanner ── one sheet serving all three scan flows ── */}
@@ -859,6 +1018,10 @@ export default function WorkerHome({ navigation }: any) {
 }
 
 const styles = StyleSheet.create({
+  cancelWarn: {
+    fontSize: font.xs, color: colors.textSecondary, lineHeight: 18,
+    marginBottom: spacing.lg,
+  },
   container: { flex: 1, backgroundColor: colors.bg },
   scroll: { flex: 1 },
   body: { padding: spacing.lg, paddingBottom: spacing.xxxl, gap: spacing.lg },

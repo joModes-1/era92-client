@@ -4,9 +4,11 @@ import {
   KeyboardAvoidingView, ActivityIndicator,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, radii, font, spacing, weight, tracking, shadow } from '../theme';
 import Icon from './Icon';
 import GradientButton from './GradientButton';
+import { AlertHost } from './AppAlert';
 import { Field } from './ui';
 
 /**
@@ -43,6 +45,7 @@ export default function ScannerSheet({
   extra?: React.ReactNode;
 }) {
   const webNoCamera = Platform.OS === 'web';
+  const insets = useSafeAreaInsets();
   const [permission, requestPermission] = useCameraPermissions();
   const [manual, setManual] = useState('');
   const [showManual, setShowManual] = useState(webNoCamera);
@@ -71,11 +74,13 @@ export default function ScannerSheet({
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+      {/* 'undefined' on Android left the manual-entry field to be covered by
+          the keyboard outright. 'height' matches the fix in FormSheet. */}
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <View style={styles.overlay}>
           <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={onClose} />
 
-          <View style={styles.sheet}>
+          <View style={[styles.sheet, { paddingBottom: spacing.xl + insets.bottom }]}>
             <View style={styles.grabber} />
 
             <View style={styles.head}>
@@ -188,6 +193,11 @@ export default function ScannerSheet({
           </View>
         </View>
       </KeyboardAvoidingView>
+
+      {/* Scan errors are raised while this sheet is open, and an Android
+          Modal is its own native window — without a host here the message
+          would be stranded behind the scanner. */}
+      <AlertHost />
     </Modal>
   );
 }

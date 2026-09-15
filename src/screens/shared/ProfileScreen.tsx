@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../../api/AuthContext';
@@ -23,6 +24,7 @@ export default function ProfileScreen() {
   const { actor, refreshActor, logout } = useAuth();
   const navigation = useNavigation<any>();
   const alert = useAppAlert();
+  const insets = useSafeAreaInsets();
   const role = actor?.role || actor?.type || 'client';
 
   const [fullName, setFullName] = useState(actor?.full_name || '');
@@ -60,9 +62,16 @@ export default function ProfileScreen() {
     <View style={styles.container}>
       <ScreenHeader title="Profile" subtitle={ROLE_LABEL[role] || role} />
 
+      <KeyboardAvoidingView
+        // Full name / email / phone are real editable fields directly on the
+        // screen, not inside a sheet — with no avoidance here the keyboard
+        // simply covered whichever one was focused, "Save changes" included.
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={{ flex: 1 }}
+      >
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={styles.body}
+        contentContainerStyle={[styles.body, { paddingBottom: spacing.xxl + insets.bottom }]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
@@ -140,6 +149,7 @@ export default function ProfileScreen() {
           </Surface>
         </View>
       </ScrollView>
+      </KeyboardAvoidingView>
     </View>
   );
 }

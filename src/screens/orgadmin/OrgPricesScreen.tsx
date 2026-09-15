@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl } from 'react-native';
 import { api } from '../../api';
+import { useAuth } from '../../api/AuthContext';
 import { colors, radii, font, spacing, weight, tracking } from '../../theme';
 import Icon from '../../components/Icon';
 import ScreenHeader, { HeaderAction } from '../../components/ScreenHeader';
@@ -41,24 +42,39 @@ function shortPrice(n: number): string {
   return n.toLocaleString();
 }
 
-/** What the "add" sheet is currently creating. */
+/** What the "add" sheet is currently creating. Both roles can add; the
+ * difference is scope — an org admin's new type is org-wide, a manager's is
+ * private to their own branch (the server stamps it from their token). */
 type AddKind = 'vehicle' | 'service' | null;
 
 export default function OrgPricesScreen() {
   const alert = useAppAlert();
+  const { actor } = useAuth();
+  // A manager manages their own branch: types they add are private to it,
+  // and a price they set lands either on their own private type (an org-scope
+  // row, since nobody else can see that type anyway) or as a branch override
+  // on a shared org-wide type. The server enforces all of this from the token
+  // regardless of what the client sends — see modules/catalogue/scope.ts.
+  const isManager = actor?.role === 'manager';
+  const branchId: string | undefined = actor?.branch_id;
+  const branchName: string | undefined = actor?.branch_name;
+
   const [matrixData, setMatrixData] = useState<any>(null);
   const [loaded, setLoaded] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
   const [editCell, setEditCell] = useState<{
-    service_id: string; vehicle_class_id: string; service_name: string; vc_name: string; price?: number;
+    service_id: string; vehicle_class_id: string; service_name: string; vc_name: string;
+    price?: number;
+    /** Both sides of the combo belong to this manager's own branch. */
+    ownBranchType?: boolean;
   } | null>(null);
   const [priceInput, setPriceInput] = useState('');
   const [saving, setSaving] = useState(false);
 
-  // Adding a car type or wash type from here, rather than sending the admin
-  // off to the Catalogue and back — a price row/column has to be created
-  // before it can be priced, so that belongs on this screen.
+  // Adding a car type or wash type from here, rather than bouncing out to
+  // the Catalogue and back — a price row/column has to exist before it can be
+  // priced, so creating one belongs on this screen.
   const [addKind, setAddKind] = useState<AddKind>(null);
   const [addName, setAddName] = useState('');
   const [addPrice, setAddPrice] = useState('');
@@ -71,10 +87,10 @@ export default function OrgPricesScreen() {
 
   const load = useCallback(async () => {
     try {
-      const data = await api.getPriceMatrix();
+      const data = await api.getPriceMatrix(isManager ? branchId : undefined);
       setMatrixData(data);
     } catch {}
-  }, []);
+  }, [isManager, branchId]);
 
   useEffect(() => { (async () => { await load(); setLoaded(true); })(); }, [load]);
 
@@ -95,14 +111,21 @@ export default function OrgPricesScreen() {
 
   const openEdit = (service: any, vc: any) => {
     const existing = findPrice(service.id, vc.id);
+    // A manager edits their branch's effective price (their own override if
+    // one exists, else the org default they're about to override); an org
+    // admin edits the org default itself.
+    const currentPrice = isManager
+      ? existing?.effective_price_ugx ?? existing?.org_price_ugx
+      : existing?.org_price_ugx;
     setEditCell({
       service_id: service.id,
       vehicle_class_id: vc.id,
       service_name: service.name,
       vc_name: vc.name,
-      price: existing?.org_price_ugx,
+      price: currentPrice,
+      ownBranchType: !!branchId && service.branch_id === branchId && vc.branch_id === branchId,
     });
-    setPriceInput(existing?.org_price_ugx ? String(existing.org_price_ugx) : '');
+    setPriceInput(currentPrice != null ? String(currentPrice) : '');
   };
 
   const submitPrice = async () => {
@@ -114,11 +137,22 @@ export default function OrgPricesScreen() {
     }
     setSaving(true);
     try {
-      await api.setOrgPrice({
+      const body = {
         service_id: editCell.service_id,
         vehicle_class_id: editCell.vehicle_class_id,
         price_ugx: price,
-      });
+      };
+      // Which write a manager makes depends on whose type it is. For a type
+      // private to their own branch there is no org-wide price to override —
+      // the org-scope row IS the branch's price, and the server allows it
+      // precisely because no other branch can see that type. For a shared
+      // org-wide type they must write a branch override instead, so one
+      // branch never reprices the whole organisation.
+      if (isManager && branchId && !editCell.ownBranchType) {
+        await api.setBranchPrice(branchId, body);
+      } else {
+        await api.setOrgPrice(body);
+      }
       setEditCell(null);
       await load();
     } catch (e: any) {
@@ -166,23 +200,45 @@ export default function OrgPricesScreen() {
         // The counterpart axis: a new car type needs a price against every
         // wash type, and vice versa.
         const others = addKind === 'vehicle' ? services : vehicleClasses;
-        const prices = others.map((o: any) =>
+        const combo = (o: any) =>
           addKind === 'vehicle'
             ? { service_id: o.id, vehicle_class_id: newId, price_ugx: price }
-            : { service_id: newId, vehicle_class_id: o.id, price_ugx: price }
-        );
-        if (prices.length > 0) await api.bulkSetPrices(prices);
+            : { service_id: newId, vehicle_class_id: o.id, price_ugx: price };
+
+        if (isManager && branchId) {
+          // A manager's new type is branch-private, but the types it pairs
+          // with are a mix: their own (org-scope price is fine — nobody else
+          // can see either side) and shared org-wide ones (must be a branch
+          // override, or one branch would be repricing the whole org).
+          // Sending the lot through /prices/bulk fails the entire batch on
+          // the shared rows, which left the new column with no prices at all
+          // and an error that did not explain why.
+          const ownScope = others.filter((o: any) => o.branch_id === branchId).map(combo);
+          const sharedScope = others.filter((o: any) => o.branch_id === null).map(combo);
+
+          if (ownScope.length > 0) await api.bulkSetPrices(ownScope);
+          // No bulk equivalent exists for branch overrides, so these go one
+          // at a time. The counts here are small (one row/column of a grid
+          // that has to fit on a phone), so this stays well-bounded.
+          for (const row of sharedScope) {
+            await api.setBranchPrice(branchId, row);
+          }
+        } else {
+          const prices = others.map(combo);
+          if (prices.length > 0) await api.bulkSetPrices(prices);
+        }
       }
 
       setAddKind(null);
       await load();
 
       const label = addKind === 'vehicle' ? 'Car type' : 'Wash type';
+      const where = isManager ? ` at ${branchName || 'your branch'}` : '';
       alert(
         `${label} added`,
         priceGiven
-          ? `${name} is priced at ${price.toLocaleString()} UGX across the board. Tap any cell to change an individual price.`
-          : `${name} has been added. Tap its cells to set prices.`
+          ? `${name} is priced at ${price.toLocaleString()} UGX across the board${where}. Tap any cell to change an individual price.`
+          : `${name} has been added${where}. Tap its cells to set prices.`
       );
     } catch (e: any) {
       alert('Error', e.message);
@@ -217,7 +273,11 @@ export default function OrgPricesScreen() {
     <View style={styles.container}>
       <ScreenHeader
         title="Prices"
-        subtitle={`${services.length} wash types × ${vehicleClasses.length} car types`}
+        subtitle={
+          isManager
+            ? `${branchName || 'Your branch'} · ${services.length} wash types × ${vehicleClasses.length} car types`
+            : `${services.length} wash types × ${vehicleClasses.length} car types`
+        }
         action={<HeaderAction icon="plus" onPress={() => openAdd(vehicleClasses.length === 0 ? 'vehicle' : 'service')} />}
       />
 
@@ -229,7 +289,9 @@ export default function OrgPricesScreen() {
       >
         {/* Add buttons come first and are always present — adding a car type
             or a wash type IS how you add a price, so it must not be hidden
-            behind an empty state or a trip to another screen. */}
+            behind an empty state or a trip to another screen. Org admin only:
+            a manager overriding one branch's prices has no reason to invent
+            a car/wash type that every other branch would also see. */}
         <View style={styles.addRow}>
           <TouchableOpacity style={styles.addBtn} onPress={() => openAdd('vehicle')} activeOpacity={0.8}>
             <Icon name="car" size={12} color={colors.primary} />
@@ -240,6 +302,15 @@ export default function OrgPricesScreen() {
             <Text style={styles.addBtnText}>Add wash type</Text>
           </TouchableOpacity>
         </View>
+
+        {isManager && (
+          <View style={styles.explain}>
+            <Icon name="info-circle" size={11} color={colors.textMuted} />
+            <Text style={styles.explainText}>
+              Anything you add here belongs to {branchName || 'your branch'} only. Shared org-wide types can be re-priced for your branch but not renamed.
+            </Text>
+          </View>
+        )}
 
         {empty ? (
           <Surface elevation="sm" padded="lg">
@@ -253,7 +324,9 @@ export default function OrgPricesScreen() {
                   : 'No wash types yet'
               }
               message={
-                vehicleClasses.length === 0 && services.length === 0
+                isManager
+                  ? 'Add the car types and wash types your branch offers — they stay private to your branch.'
+                  : vehicleClasses.length === 0 && services.length === 0
                   ? 'A price is one car type getting one wash type. Add a car type (Saloon, SUV) and a wash type (Body wash, Full valet) and every combination appears here ready to price.'
                   : vehicleClasses.length === 0
                   ? 'You have wash types but no car types. Add a car type and the grid fills in.'
@@ -277,7 +350,9 @@ export default function OrgPricesScreen() {
               />
               <Text style={[styles.bannerText, { color: missing.length > 0 ? colors.warning : colors.success }]}>
                 {missing.length > 0
-                  ? `${missing.length} of ${totalCells} combinations still need a price`
+                  ? isManager
+                    ? `${missing.length} of ${totalCells} combinations have no org price yet`
+                    : `${missing.length} of ${totalCells} combinations still need a price`
                   : `All ${totalCells} combinations priced`}
               </Text>
               <Text style={styles.bannerCount}>{filled}/{totalCells}</Text>
@@ -323,7 +398,9 @@ export default function OrgPricesScreen() {
 
                       {vehicleClasses.map((vc: any) => {
                         const p = findPrice(svc.id, vc.id);
-                        const has = p?.org_price_ugx != null;
+                        const displayPrice = isManager ? p?.effective_price_ugx ?? p?.org_price_ugx : p?.org_price_ugx;
+                        const has = displayPrice != null;
+                        const isOverride = isManager && p?.source === 'branch_override';
                         return (
                           <TouchableOpacity
                             key={vc.id}
@@ -332,9 +409,15 @@ export default function OrgPricesScreen() {
                             activeOpacity={0.6}
                           >
                             {has ? (
-                              <Text style={styles.cellText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>
-                                {shortPrice(Number(p.org_price_ugx))}
-                              </Text>
+                              <View style={styles.cellValueWrap}>
+                                <Text style={styles.cellText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>
+                                  {shortPrice(Number(displayPrice))}
+                                </Text>
+                                {/* A dot marks a branch-specific price so a
+                                    manager can tell "mine" from "org default"
+                                    at a glance, without opening the cell. */}
+                                {isOverride && <View style={styles.overrideDot} />}
+                              </View>
                             ) : (
                               <Icon name="plus" size={11} color={colors.warning} />
                             )}
@@ -364,7 +447,9 @@ export default function OrgPricesScreen() {
             <View style={styles.hint}>
               <Icon name="info-circle" size={11} color={colors.textMuted} />
               <Text style={styles.hintText}>
-                Prices in thousands — tap any cell for the exact figure. Branch managers can override the org price for their own branch.
+                {isManager
+                  ? 'A dot marks a price set for your branch. Cells without one use the org default. Types you add are private to your branch.'
+                  : 'Prices in thousands — tap any cell for the exact figure. Branch managers can override the org price for their own branch.'}
               </Text>
             </View>
           </>
@@ -375,7 +460,7 @@ export default function OrgPricesScreen() {
       <FormSheet
         visible={!!editCell}
         onClose={() => setEditCell(null)}
-        title="Set price"
+        title={isManager ? 'Set branch price' : 'Set price'}
         subtitle={editCell ? `${editCell.service_name} · ${editCell.vc_name}` : undefined}
         submitLabel="Save price"
         onSubmit={submitPrice}
@@ -390,18 +475,27 @@ export default function OrgPricesScreen() {
           placeholder="25000"
           keyboardType="numeric"
           autoFocus
-          hint={editCell?.price != null ? `Currently ${Number(editCell.price).toLocaleString()}` : 'No price set yet.'}
+          hint={
+            editCell?.price != null
+              ? `Currently ${Number(editCell.price).toLocaleString()}${isManager ? ` for ${branchName || 'your branch'}` : ''}`
+              : isManager
+              ? 'No branch price set — using the org default.'
+              : 'No price set yet.'
+          }
           style={{ marginBottom: 0 }}
         />
       </FormSheet>
 
-      {/* ── Add a car type / wash type, and optionally price it at once ── */}
+      {/* ── Add a car type / wash type, and optionally price it at once ──
+          Org admin only; managers never open this sheet. */}
       <FormSheet
         visible={addKind !== null}
         onClose={() => setAddKind(null)}
         title={addKind === 'vehicle' ? 'Add car type' : 'Add wash type'}
         subtitle={
-          addKind === 'vehicle'
+          isManager
+            ? `${addKind === 'vehicle' ? 'A new column' : 'A new row'} — ${branchName || 'your branch'} only`
+            : addKind === 'vehicle'
             ? 'A new column in the price grid'
             : 'A new row in the price grid'
         }
@@ -466,6 +560,9 @@ const styles = StyleSheet.create({
   },
   addBtnText: { fontSize: font.sm, fontWeight: weight.heavy, color: colors.primary },
 
+  explain: { flexDirection: 'row', alignItems: 'flex-start', gap: 7, paddingHorizontal: spacing.xs },
+  explainText: { flex: 1, fontSize: font.xs, color: colors.textMuted, lineHeight: 17 },
+
   banner: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   bannerText: { flex: 1, fontSize: font.sm, fontWeight: weight.bold },
   bannerCount: { fontSize: font.sm, fontWeight: weight.black, color: colors.textSecondary },
@@ -501,7 +598,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
   },
   cellEmpty: { backgroundColor: colors.warningSoft },
+  cellValueWrap: { alignItems: 'center', gap: 2 },
   cellText: { fontSize: font.xs, fontWeight: weight.heavy, color: colors.text, letterSpacing: tracking.tight },
+  overrideDot: { width: 4, height: 4, borderRadius: 2, backgroundColor: colors.primary },
   setWrap: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   setText: { fontSize: font.micro, fontWeight: weight.bold, color: colors.warning },
 

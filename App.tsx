@@ -1,16 +1,20 @@
 import 'react-native-gesture-handler';
 import React from 'react';
+import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createDrawerNavigator } from '@react-navigation/drawer';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider, useAuth } from './src/api/AuthContext';
-import { AppAlertProvider } from './src/components/AppAlert';
+import { AppAlertProvider, useAppAlert } from './src/components/AppAlert';
+import { useOtaUpdate } from './src/hooks/useOtaUpdate';
+import { usePushNotifications } from './src/hooks/usePushNotifications';
 import LoginScreen from './src/screens/LoginScreen';
 import RegisterScreen from './src/screens/RegisterScreen';
 import ForgotPasswordScreen from './src/screens/ForgotPasswordScreen';
 import ChangePasswordScreen from './src/screens/shared/ChangePasswordScreen';
 import ProfileScreen from './src/screens/shared/ProfileScreen';
+import ReportIssueScreen from './src/screens/shared/ReportIssueScreen';
 import AppDrawerContent from './src/components/AppDrawerContent';
 
 import WorkerHome from './src/screens/worker/WorkerHome';
@@ -64,6 +68,7 @@ function WorkerDrawer() {
   return (
     <Drawer.Navigator screenOptions={drawerScreenOptions} drawerContent={(p) => <AppDrawerContent {...p} />}>
       <Drawer.Screen name="Shift & Queue" component={WorkerHome} />
+      <Drawer.Screen name="Report a problem" component={ReportIssueScreen} />
       <Drawer.Screen name="Profile" component={ProfileScreen} />
     </Drawer.Navigator>
   );
@@ -82,6 +87,9 @@ function ManagerDrawer() {
       <Drawer.Screen name="Handovers" component={HandoversReportScreen} />
       <Drawer.Screen name="Cancellations" component={CancellationsReportScreen} />
       <Drawer.Screen name="Staff" component={StaffScreen} />
+      <Drawer.Screen name="Catalogue" component={OrgCatalogueScreen} />
+      <Drawer.Screen name="Prices" component={OrgPricesScreen} />
+      <Drawer.Screen name="Report a problem" component={ReportIssueScreen} />
       <Drawer.Screen name="Profile" component={ProfileScreen} />
     </Drawer.Navigator>
   );
@@ -95,7 +103,7 @@ function OrgadminDrawer() {
       <Drawer.Screen name="Branches" component={OrgBranchesScreen} />
       <Drawer.Screen name="Staff" component={StaffScreen} />
       <Drawer.Screen name="Catalogue" component={OrgCatalogueScreen} />
-      <Drawer.Screen name="Org Prices" component={OrgPricesScreen} />
+      <Drawer.Screen name="Prices" component={OrgPricesScreen} />
       <Drawer.Screen name="Loyalty Settings" component={LoyaltySettingsScreen} />
       <Drawer.Screen name="Customers" component={CustomersScreen} />
       <Drawer.Screen name="Daily Report" component={DailyReportScreen} />
@@ -106,6 +114,7 @@ function OrgadminDrawer() {
       <Drawer.Screen name="Handovers" component={HandoversReportScreen} />
       <Drawer.Screen name="Cancellations" component={CancellationsReportScreen} />
       <Drawer.Screen name="Audit Log" component={AuditLogScreen} />
+      <Drawer.Screen name="Report a problem" component={ReportIssueScreen} />
       <Drawer.Screen name="Profile" component={ProfileScreen} />
     </Drawer.Navigator>
   );
@@ -118,6 +127,7 @@ function SysadminDrawer() {
       <Drawer.Screen name="Organizations" component={OrganizationsScreen} />
       <Drawer.Screen name="Billing" component={BillingScreen} />
       <Drawer.Screen name="Platform Admins" component={PlatformAdminsScreen} />
+      <Drawer.Screen name="Report a problem" component={ReportIssueScreen} />
       <Drawer.Screen name="Profile" component={ProfileScreen} />
       {/* Reached by tapping an org, not from the menu — see HIDDEN_ROUTES. */}
       <Drawer.Screen name="Org Detail" component={OrgDetailScreen} />
@@ -133,6 +143,7 @@ function ClientDrawer() {
       <Drawer.Screen name="Loyalty" component={LoyaltyScreen} />
       <Drawer.Screen name="Ledger" component={LedgerScreen} />
       <Drawer.Screen name="My Code" component={MyCodeScreen} />
+      <Drawer.Screen name="Report a problem" component={ReportIssueScreen} />
       <Drawer.Screen name="Profile" component={ProfileScreen} />
     </Drawer.Navigator>
   );
@@ -140,6 +151,10 @@ function ClientDrawer() {
 
 function RootNavigator() {
   const { actor, loading, mustChangePassword } = useAuth();
+  // Registers this device's push token once an actor is known. The server
+  // has always sent a real push on "car ready" and similar events — this is
+  // what actually delivers it, by giving it a token to send to.
+  usePushNotifications(actor?.id);
 
   if (loading) {
     return (
@@ -195,16 +210,48 @@ function RootNavigator() {
   );
 }
 
+/**
+ * Prompts once a background OTA update has finished downloading. Lives
+ * inside all the providers so it can raise the same alert used everywhere
+ * else, and so a reload here also re-runs AuthProvider's boot check.
+ */
+function OtaUpdatePrompt() {
+  const { ready, apply } = useOtaUpdate();
+  const alert = useAppAlert();
+  const [asked, setAsked] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!ready || asked) return;
+    setAsked(true);
+    alert(
+      'Update ready',
+      'A new version has downloaded. Restart now to use it, or keep going and it applies next time you open the app.',
+      [
+        { text: 'Later', style: 'cancel' },
+        { text: 'Restart now', onPress: apply },
+      ]
+    );
+  }, [ready, asked, alert, apply]);
+
+  return null;
+}
+
 export default function App() {
   // SafeAreaProvider must sit above everything: React Navigation reads its
   // context, and without it insets resolve to zero or get applied twice.
   return (
     <SafeAreaProvider>
+      {/* Every screen past login opens with a pink/ink gradient at the very
+          top (ScreenHeader) or is the dark AuthShell — light icons are
+          correct everywhere in this app, so it's set once here rather than
+          per screen, where it had only ever been set on the login screen. */}
+      <StatusBar style="light" />
       <AppAlertProvider>
         <AuthProvider>
           <NavigationContainer>
             <RootNavigator />
           </NavigationContainer>
+          <OtaUpdatePrompt />
         </AuthProvider>
       </AppAlertProvider>
     </SafeAreaProvider>

@@ -45,7 +45,15 @@ export default function LoginScreen() {
       <View style={styles.bloomOrange} pointerEvents="none" />
 
       <SafeAreaView style={{ flex: 1 }}>
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+        {/* 'padding' only resizes the view on iOS; leaving Android's behavior
+            undefined meant the keyboard just covered the focused field
+            instead of the screen making room for it — 'height' is the
+            working equivalent on Android. */}
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={{ flex: 1 }}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : StatusBar.currentHeight ?? 0}
+        >
           <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
 
             {/* Brand */}

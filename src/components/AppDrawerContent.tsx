@@ -45,10 +45,11 @@ const ROUTE_ICON: Record<string, string> = {
   'Ledger': 'list-alt',
   'My Code': 'qrcode',
   'Profile': 'user-circle',
+  'Report a problem': 'life-ring',
   'Home': 'home',
   'Branches': 'building',
   'Catalogue': 'th-large',
-  'Org Prices': 'tags',
+  'Prices': 'tags',
   'Loyalty Settings': 'star-half-alt',
   'Customers': 'address-book',
   'Audit Log': 'shield-alt',
@@ -64,8 +65,8 @@ const HIDDEN_ROUTES = new Set(['Org Detail']);
 const GROUPS: { title: string; routes: string[] }[] = [
   { title: 'Today', routes: ['Shift & Queue', 'Active Wash', 'Home', 'Overview', 'Cash Handover', 'Daily Report'] },
   { title: 'Reports', routes: ['Performance', 'Cash Variance', 'Stale Alerts', 'Exceptions', 'Handovers', 'Cancellations', 'History', 'Ledger', 'Audit Log'] },
-  { title: 'Manage', routes: ['Staff', 'Branches', 'Catalogue', 'Org Prices', 'Loyalty Settings', 'Customers', 'Organizations', 'Billing', 'Platform Admins'] },
-  { title: 'You', routes: ['Loyalty', 'My Code', 'Profile'] },
+  { title: 'Manage', routes: ['Staff', 'Branches', 'Catalogue', 'Prices', 'Loyalty Settings', 'Customers', 'Organizations', 'Billing', 'Platform Admins'] },
+  { title: 'You', routes: ['Loyalty', 'My Code', 'Report a problem', 'Profile'] },
 ];
 
 export default function AppDrawerContent(props: DrawerContentComponentProps) {
