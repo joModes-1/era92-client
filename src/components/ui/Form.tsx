@@ -4,7 +4,7 @@ import {
   Modal, ScrollView, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { colors, radii, font, spacing, weight, tracking, shadow } from '../../theme';
+import { colors, radii, font, spacing, weight, tracking, shadow, noFocusRing } from '../../theme';
 import Icon from '../Icon';
 import GradientButton from '../GradientButton';
 import { AlertHost } from '../AppAlert';
@@ -237,7 +237,7 @@ const styles = StyleSheet.create({
   inputWrapError: { borderColor: colors.error, backgroundColor: colors.errorSoft },
   inputWrapMultiline: { alignItems: 'flex-start', paddingVertical: spacing.sm },
   prefix: { fontSize: font.regular, fontWeight: weight.heavy, color: colors.textMuted },
-  input: { flex: 1, paddingVertical: 13, fontSize: font.regular, color: colors.text, fontWeight: weight.medium },
+  input: { flex: 1, paddingVertical: 13, fontSize: font.regular, color: colors.text, fontWeight: weight.medium, ...noFocusRing },
   inputMultiline: { minHeight: 74, textAlignVertical: 'top' },
   revealBtn: { padding: 2 },
   hint: { fontSize: font.xs, color: colors.textMuted },
@@ -253,7 +253,7 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: colors.border,
   },
-  searchInput: { flex: 1, paddingVertical: 11, fontSize: font.regular, color: colors.text },
+  searchInput: { flex: 1, paddingVertical: 11, fontSize: font.regular, color: colors.text, ...noFocusRing },
 
   pills: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   pill: {

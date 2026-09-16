@@ -7,7 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../api/AuthContext';
-import { colors, radii, font, spacing, weight, tracking, shadow } from '../theme';
+import { colors, radii, font, spacing, weight, tracking, shadow, noFocusRing } from '../theme';
 import Icon from '../components/Icon';
 import GradientButton from '../components/GradientButton';
 
@@ -214,7 +214,7 @@ const styles = StyleSheet.create({
   },
   inputWrapFocus: { borderColor: colors.primary, backgroundColor: colors.bgCard },
   inputWrapError: { borderColor: colors.error },
-  input: { flex: 1, paddingVertical: 14, fontSize: font.regular, color: colors.text, fontWeight: weight.medium },
+  input: { flex: 1, paddingVertical: 14, fontSize: font.regular, color: colors.text, fontWeight: weight.medium, ...noFocusRing },
 
   errorBox: {
     flexDirection: 'row', alignItems: 'center', gap: 7,

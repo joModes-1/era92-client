@@ -205,3 +205,17 @@ export const layout = {
   cardPadding: spacing.lg,
   headerHeight: 56,
 };
+
+/**
+ * Suppresses the browser's own focus ring on text inputs.
+ *
+ * On web, Chrome paints a thick default outline (gold/amber in this app's
+ * colours) around a focused input, sitting on top of — and clashing with —
+ * the pink focus border the inputs already draw themselves. Native ignores
+ * `outlineStyle` entirely, so this is inert off the web.
+ *
+ * Spread into any TextInput's style. Removing the ring is only safe because
+ * focus stays clearly visible through that pink border; an input with no
+ * focus styling of its own must not use this.
+ */
+export const noFocusRing = { outlineStyle: 'none' } as any;
