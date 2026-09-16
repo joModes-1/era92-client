@@ -48,6 +48,16 @@ export default function WorkersReportScreen() {
         const idle = data.filter((w) => Number(w.washes_started || 0) === 0);
         const topCash = Math.max(...ranked.map((w) => Number(w.cash_taken_ugx || 0)), 1);
 
+        // A leaderboard is the top of the field, not the whole field. On a
+        // full crew the ranked list ran to a dozen near-identical cards and
+        // the standings stopped being readable, so only the leading six get
+        // the ranked treatment and everyone else is summarised below —
+        // still present and still counted, just not pretending to be a
+        // podium place.
+        const BOARD_SIZE = 6;
+        const board = ranked.slice(0, BOARD_SIZE);
+        const rest = ranked.slice(BOARD_SIZE);
+
         return (
           <View style={{ gap: spacing.lg }}>
             {ranked.length === 0 ? (
@@ -56,7 +66,7 @@ export default function WorkersReportScreen() {
               <View style={{ gap: spacing.md }}>
                 <SectionHeader title="Leaderboard" count={ranked.length} icon="trophy" />
 
-                {ranked.map((w: any, i: number) => {
+                {board.map((w: any, i: number) => {
                   const started = Number(w.washes_started || 0);
                   const settled = Number(w.washes_settled || 0);
                   const cash = Number(w.cash_taken_ugx || 0);
@@ -160,6 +170,29 @@ export default function WorkersReportScreen() {
               </View>
             )}
 
+            {/* Everyone below the top six. They worked and their cash counts,
+                so they are listed with their number — just not given a
+                podium card, which is what made a full crew unreadable. */}
+            {rest.length > 0 && (
+              <View>
+                <SectionHeader title="Also working" count={rest.length} icon="users" />
+                <Surface elevation="sm" padded="sm" style={{ gap: 0 }}>
+                  {rest.map((w: any, i: number) => (
+                    <View key={i} style={[styles.idleRow, i < rest.length - 1 && styles.idleRowBorder]}>
+                      <Text style={styles.restRank}>{i + BOARD_SIZE + 1}</Text>
+                      <View style={styles.idleAvatar}>
+                        <Text style={styles.idleAvatarText}>{initials(w.full_name)}</Text>
+                      </View>
+                      <Text style={styles.idleName} numberOfLines={1}>{w.full_name}</Text>
+                      <Text style={styles.restCash} numberOfLines={1}>
+                        {Number(w.cash_taken_ugx || 0).toLocaleString()}
+                      </Text>
+                    </View>
+                  ))}
+                </Surface>
+              </View>
+            )}
+
             {/* Idle staff are named, not hidden, but kept visually quiet — a
                 thin roster row instead of a full zeroed-out card each. */}
             {idle.length > 0 && (
@@ -253,4 +286,8 @@ const styles = StyleSheet.create({
   idleAvatarText: { fontSize: 10, fontWeight: weight.bold, color: colors.textMuted },
   idleName: { flex: 1, fontSize: font.sm, color: colors.textSecondary, fontWeight: weight.medium },
   idleTag: { fontSize: font.micro, fontWeight: weight.bold, color: colors.textMuted, letterSpacing: tracking.caps },
+
+  // Fixed width so the rank column stays aligned once it reaches two digits.
+  restRank: { width: 18, fontSize: font.micro, fontWeight: weight.heavy, color: colors.textMuted, textAlign: 'center' },
+  restCash: { fontSize: font.sm, fontWeight: weight.bold, color: colors.textSecondary },
 });
