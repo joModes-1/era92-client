@@ -1,5 +1,8 @@
 import 'react-native-gesture-handler';
 import React from 'react';
+import * as SplashScreen from 'expo-splash-screen';
+import { useFonts, InstrumentSans_500Medium } from '@expo-google-fonts/instrument-sans';
+import { Poppins_900Black_Italic } from '@expo-google-fonts/poppins';
 import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -9,10 +12,16 @@ import { AuthProvider, useAuth } from './src/api/AuthContext';
 import { AppAlertProvider, useAppAlert } from './src/components/AppAlert';
 import { useOtaUpdate } from './src/hooks/useOtaUpdate';
 import { usePushNotifications } from './src/hooks/usePushNotifications';
-import LoginScreen from './src/screens/LoginScreen';
+
+// Without this the native splash hides itself the instant the JS bundle
+// finishes loading, which is before React has mounted anything — a visible
+// flash of blank white between the splash and the first screen. Holding it
+// here and releasing it in `Root` once session restore has settled means the
+// splash hands straight over to a painted screen. Must run at module load,
+// before the first render.
+SplashScreen.preventAutoHideAsync().catch(() => {});
+import WelcomeScreen from './src/screens/WelcomeScreen';
 import RegisterScreen from './src/screens/RegisterScreen';
-import ForgotPasswordScreen from './src/screens/ForgotPasswordScreen';
-import ChangePasswordScreen from './src/screens/shared/ChangePasswordScreen';
 import ProfileScreen from './src/screens/shared/ProfileScreen';
 import ReportIssueScreen from './src/screens/shared/ReportIssueScreen';
 import AppDrawerContent from './src/components/AppDrawerContent';
@@ -44,15 +53,17 @@ import LoyaltySettingsScreen from './src/screens/orgadmin/LoyaltySettingsScreen'
 import CustomersScreen from './src/screens/orgadmin/CustomersScreen';
 import AuditLogScreen from './src/screens/orgadmin/AuditLogScreen';
 
-import ActiveWashScreen from './src/screens/client/ActiveWashScreen';
+import ClientHome from './src/screens/client/ClientHome';
 import HistoryScreen from './src/screens/client/HistoryScreen';
 import LoyaltyScreen from './src/screens/client/LoyaltyScreen';
 import LedgerScreen from './src/screens/client/LedgerScreen';
 import MyCodeScreen from './src/screens/client/MyCodeScreen';
-import StartWashQRScreen from './src/screens/client/StartWashQRScreen';
-import PayWashQRScreen from './src/screens/client/PayWashQRScreen';
+import BranchScanScreen from './src/screens/client/BranchScanScreen';
+import BookWashScreen from './src/screens/client/BookWashScreen';
+import PaymentMethodScreen from './src/screens/client/PaymentMethodScreen';
+import PaymentSuccessScreen from './src/screens/client/PaymentSuccessScreen';
 
-import { ActivityIndicator, View } from 'react-native';
+import { View } from 'react-native';
 import { colors } from './src/theme';
 
 const Stack = createNativeStackNavigator();
@@ -138,7 +149,7 @@ function SysadminDrawer() {
 function ClientDrawer() {
   return (
     <Drawer.Navigator screenOptions={drawerScreenOptions} drawerContent={(p) => <AppDrawerContent {...p} />}>
-      <Drawer.Screen name="Active Wash" component={ActiveWashScreen} />
+      <Drawer.Screen name="Active Wash" component={ClientHome} />
       <Drawer.Screen name="History" component={HistoryScreen} />
       <Drawer.Screen name="Loyalty" component={LoyaltyScreen} />
       <Drawer.Screen name="Ledger" component={LedgerScreen} />
@@ -149,36 +160,52 @@ function ClientDrawer() {
   );
 }
 
+/**
+ * There is one splash, and it is the native one.
+ *
+ * This used to render `BrandSplash` — the same gradient and wordmark, in
+ * React — on top of the navigator for a fixed six seconds. That produced
+ * two splashes back to back: Android's, then an almost identical JS one,
+ * with a visible seam between them and six seconds of waiting after the app
+ * was already usable.
+ *
+ * The native splash now carries the branding itself (a pre-rendered
+ * `splash-branded.png` of that same gradient and wordmark, configured in
+ * app.json). It is on screen from the moment the process starts — genuinely
+ * before any JavaScript — and is dismissed by `hideAsync()` as soon as the
+ * first real screen is ready. Nothing is held artificially.
+ */
+function Root() {
+  const { loading } = useAuth();
+
+  // Release the native splash once session restore has settled, so it hands
+  // straight over to a painted screen rather than a blank frame.
+  React.useEffect(() => {
+    if (loading) return;
+    SplashScreen.hideAsync().catch(() => {});
+  }, [loading]);
+
+  return <RootNavigator />;
+}
+
 function RootNavigator() {
-  const { actor, loading, mustChangePassword } = useAuth();
+  const { actor, loading } = useAuth();
   // Registers this device's push token once an actor is known. The server
   // has always sent a real push on "car ready" and similar events — this is
   // what actually delivers it, by giving it a token to send to.
   usePushNotifications(actor?.id);
 
+  // Session restore is still in flight — nothing can be routed yet. The
+  // splash is covering this, so it only has to hold the frame, not fill it.
   if (loading) {
-    return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.bg }}>
-        <ActivityIndicator size="large" color={colors.primary} />
-      </View>
-    );
-  }
-
-  // Must change password first
-  if (actor && mustChangePassword) {
-    return (
-      <Stack.Navigator screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} />
-      </Stack.Navigator>
-    );
+    return <View style={{ flex: 1, backgroundColor: colors.gradientSplash[0] }} />;
   }
 
   if (!actor) {
     return (
       <Stack.Navigator screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="Login" component={LoginScreen} />
+        <Stack.Screen name="Welcome" component={WelcomeScreen} />
         <Stack.Screen name="Register" component={RegisterScreen} />
-        <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
       </Stack.Navigator>
     );
   }
@@ -199,11 +226,19 @@ function RootNavigator() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="App" component={RoleDrawer} />
-      <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} options={{ presentation: 'modal' }} />
       {role === 'client' && (
         <>
-          <Stack.Screen name="StartWashQR" component={StartWashQRScreen} options={{ presentation: 'modal' }} />
-          <Stack.Screen name="PayWashQR" component={PayWashQRScreen} options={{ presentation: 'modal' }} />
+          {/* Scanning the branch's wall QR — matches ScannerSheet's own
+              full-bleed dark UI, so it isn't boxed into a smaller card. */}
+          <Stack.Screen name="BranchScan" component={BranchScanScreen} options={{ presentation: 'fullScreenModal' }} />
+          {/* Same weight as the worker's own StartWashFlow, which this
+              mirrors — a full-screen multi-field form, not a light sheet. */}
+          <Stack.Screen name="BookWash" component={BookWashScreen} options={{ presentation: 'fullScreenModal' }} />
+          {/* No separate progress screen — the 3-stage tracker lives on
+              ClientHome itself now, so booking pops straight back there. */}
+          <Stack.Screen name="PaymentMethod" component={PaymentMethodScreen} options={{ presentation: 'modal' }} />
+          {/* Matches PaymentReceipt's own internal full-screen Modal. */}
+          <Stack.Screen name="PaymentSuccess" component={PaymentSuccessScreen} options={{ presentation: 'fullScreenModal' }} />
         </>
       )}
     </Stack.Navigator>
@@ -237,6 +272,14 @@ function OtaUpdatePrompt() {
 }
 
 export default function App() {
+  // The native splash is already held by preventAutoHideAsync() above, so
+  // there is nothing extra to gate here — returning null for these few
+  // frames just leaves the native splash up a moment longer, rather than
+  // letting text flash in the system font and re-flow once the real faces
+  // arrive.
+  const [fontsLoaded] = useFonts({ InstrumentSans_500Medium, Poppins_900Black_Italic });
+  if (!fontsLoaded) return null;
+
   // SafeAreaProvider must sit above everything: React Navigation reads its
   // context, and without it insets resolve to zero or get applied twice.
   return (
@@ -249,7 +292,7 @@ export default function App() {
       <AppAlertProvider>
         <AuthProvider>
           <NavigationContainer>
-            <RootNavigator />
+            <Root />
           </NavigationContainer>
           <OtaUpdatePrompt />
         </AuthProvider>

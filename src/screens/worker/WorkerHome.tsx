@@ -6,13 +6,39 @@ import { api } from '../../api';
 import { colors, radii, font, spacing, weight, tracking, shadow } from '../../theme';
 import GradientButton from '../../components/GradientButton';
 import Badge from '../../components/Badge';
-import ScreenHeader, { HeaderStat } from '../../components/ScreenHeader';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import {
+  HomeTopBar, RewardsBanner, ServiceTile, ScanBar, RecentRow, PromptRow, PromoCard,
+  SuccessToast,
+} from './HomeParts';
+import PointsSheet from './PointsSheet';
+import StartWashFlow from './StartWashFlow';
+import PaymentSheet from './PaymentSheet';
+import PaymentReceipt from './PaymentReceipt';
 import Icon from '../../components/Icon';
 import { useAppAlert, AlertHost } from '../../components/AppAlert';
 import ScannerSheet from '../../components/ScannerSheet';
+import NotificationPrompt from '../../components/NotificationPrompt';
 import { Surface, SectionHeader, EmptyState, SkeletonList, FormSheet, PillPicker, Field } from '../../components/ui';
 
 const ugx = (n: any) => Number(n || 0).toLocaleString();
+
+/**
+ * Short form for headline figures: 200000 → "200K", 1500000 → "1.5M".
+ * Only for display where space is tight and the exact shillings do not
+ * matter — never for an amount someone is paying or reconciling.
+ */
+const compactUgx = (n: number) => {
+  if (n >= 1_000_000) {
+    const m = n / 1_000_000;
+    return `${m % 1 === 0 ? m : m.toFixed(1)}M`;
+  }
+  if (n >= 1_000) {
+    const k = n / 1_000;
+    return `${k % 1 === 0 ? k : k.toFixed(1)}K`;
+  }
+  return String(n);
+};
 
 /** "9300m" means nothing on a busy forecourt — say it in hours and days. */
 function minutesLabel(mins: any): string {
@@ -33,7 +59,8 @@ export default function WorkerHome({ navigation }: any) {
   const insets = useSafeAreaInsets();
   const alert = useAppAlert();
   const [shift, setShift] = useState<any>(null);
-  const [queue, setQueue] = useState<any>({ washing: [], ready: [] });
+  const [points, setPoints] = useState<any>(null);
+  const [queue, setQueue] = useState<any>({ washing: [], ready: [], requested: [] });
   const [today, setToday] = useState<any>(null);
   const [vcs, setVcs] = useState<any[]>([]);
   const [selectedVc, setSelectedVc] = useState('');
@@ -66,6 +93,14 @@ export default function WorkerHome({ navigation }: any) {
   const pendingHandoverReasonRef = useRef<string | null>(null);
   /** The pay token just scanned, kept for a handover retry. */
   const pendingScanTokenRef = useRef<string | null>(null);
+
+  // Taking payment: which job is being paid for, and the receipt shown
+  // afterwards as its own page.
+  const [payTarget, setPayTarget] = useState<any>(null);
+  const [receipt, setReceipt] = useState<any>(null);
+  /** Shown over the home screen after the receipt is dismissed. */
+  const [toast, setToast] = useState<{ points?: number | null } | null>(null);
+  const [pointsOpen, setPointsOpen] = useState(false);
 
   // Cancelling a job. The backend has always accepted this (and the org admin
   // has a Cancellations report reading the results) but nothing in the app
@@ -100,12 +135,16 @@ export default function WorkerHome({ navigation }: any) {
 
   const load = useCallback(async () => {
     try {
-      const [s, q, t, prices] = await Promise.allSettled([
+      const [s, q, t, prices, pts] = await Promise.allSettled([
         api.getCurrentShift(),
         api.getQueue(),
         api.getMyToday(),
         actor?.branch_id ? api.getEffectivePrices(actor.branch_id) : Promise.resolve(null),
+        api.myPoints(),
       ]);
+      // Points are a nice-to-have on this screen: if the scheme is off or
+      // the call fails, the rest of the day's work still has to load.
+      if (pts.status === 'fulfilled') setPoints(pts.value);
       // A rejected /current means "no open shift" (404), not a failure.
       if (s.status === 'fulfilled') setShift(s.value);
       else setShift(null);
@@ -166,8 +205,13 @@ export default function WorkerHome({ navigation }: any) {
     setLoading(false);
   };
 
-  const startWash = async () => {
-    if (!selectedVc) { alert('Select', 'Choose a car type'); return; }
+  const startWash = async (draft: {
+    vehicle_class_id: string;
+    service_id: string;
+    plate?: string;
+    vehicle_color?: string;
+  }) => {
+    if (!draft.vehicle_class_id) { alert('Select', 'Choose a car type'); return; }
     setLoading(true);
     try {
       // Sending start_token links the wash to the customer and marks it
@@ -176,8 +220,10 @@ export default function WorkerHome({ navigation }: any) {
       // call returns — the token is a one-shot opaque code — so the choice to
       // redeem is offered afterward, not guessed at beforehand.
       const res = await api.startWash({
-        vehicle_class_id: selectedVc,
-        service_id: selectedSvc || undefined,
+        vehicle_class_id: draft.vehicle_class_id,
+        service_id: draft.service_id || undefined,
+        plate: draft.plate,
+        vehicle_color: draft.vehicle_color,
         start_token: pendingStartToken || undefined,
       });
       const washId = res?.wash_id;
@@ -222,7 +268,22 @@ export default function WorkerHome({ navigation }: any) {
           ]
         );
       }
-    } catch (e: any) { alert('Error', e.message); }
+    } catch (e: any) {
+      // A start token is single-use and short-lived. Keeping it in state
+      // after a failure meant every retry resent the same dead token and
+      // failed identically — the worker was stuck on "Invalid or expired
+      // start token" until they restarted the app. Dropping it here lets
+      // the next attempt go through as an ordinary walk-in.
+      if (/BAD_TOKEN|expired start token/i.test(String(e?.message || ''))) {
+        setPendingStartToken(null);
+        alert(
+          'That code has expired',
+          'The customer\'s code is no longer valid — they can show a fresh one, or you can book this car without it.'
+        );
+      } else {
+        alert('Error', e.message);
+      }
+    }
     setLoading(false);
   };
 
@@ -414,10 +475,30 @@ export default function WorkerHome({ navigation }: any) {
   };
 
 /** Runs the actual cash/free settle call, with a handover reason if needed. */
-  const runCashSettle = async (w: any, handoverReason?: string) => {
+  const runCashSettle = async (w: any, handoverReason?: string, payment?: { method: string; phone?: string }) => {
     setBusyId(w.id);
     try {
-      await api.settle(w.id, { unverified_reason: 'no_app', handover_reason: handoverReason });
+      const res = await api.settle(w.id, {
+        unverified_reason: 'no_app',
+        handover_reason: handoverReason,
+        payment_method: payment?.method,
+        payer_phone: payment?.phone,
+      });
+      // Close the payment sheet and show the receipt as its own page — it
+      // is what the worker holds up to the customer, so it should not be a
+      // panel inside the sheet they just used.
+      if (payment) {
+        setPayTarget(null);
+        setReceipt({
+          reference: res?.receipt_no || 'Recorded',
+          item: `${w.vehicle_class_name || 'Car'} · ${w.service_name || 'Wash'}`,
+          paymentType: payment.method === 'mtn' ? 'MTN MoMo'
+            : payment.method === 'airtel' ? 'Airtel Money' : 'Cash',
+          recipient: actor?.org_name || actor?.branch_name || '92 CarWash',
+          amountUgx: Number(res?.amount_ugx ?? w.quoted_amount_ugx ?? 0),
+          pointsEarned: res?.worker_points?.earned ?? null,
+        });
+      }
       await load();
     } catch (e: any) {
       const msg = String(e?.message || '');
@@ -492,6 +573,32 @@ export default function WorkerHome({ navigation }: any) {
     setBusyId(null);
   };
 
+  /**
+   * Claims a client's self-service booking. Visible to every worker at the
+   * branch regardless of their own busy state — only the tap itself is
+   * gated, by the backend's own open-shift + zero-in-progress check, so a
+   * busy worker gets a clear WORKER_BUSY error rather than the section
+   * disappearing unpredictably under them.
+   */
+  const acceptRequest = async (id: string) => {
+    setBusyId(id);
+    try {
+      await api.acceptWash(id);
+      await load();
+    } catch (e: any) {
+      const msg = String(e?.message || '');
+      if (/WORKER_BUSY/i.test(msg)) {
+        alert('Finish your current car first', 'You can only have one wash in progress at a time.');
+      } else if (/ALREADY_CLAIMED/i.test(msg)) {
+        alert('Already taken', 'Another worker just accepted this request.');
+        await load();
+      } else {
+        alert('Could not accept this request', msg);
+      }
+    }
+    setBusyId(null);
+  };
+
   const firstName = actor?.full_name?.split(' ')[0] || 'Worker';
   // Total finished today (paid + free) — used for the header tally.
   const settledCount = Number(today?.started_and_settled_by_me?.count || 0);
@@ -507,14 +614,41 @@ export default function WorkerHome({ navigation }: any) {
 
   const expected = Number(shift?.expected_cash_ugx || 0);
 
+  /**
+   * The four service tiles at the top of the home screen.
+   *
+   * Built from the first vehicle class's services purely to have real names
+   * and prices to show; the actual car type is chosen on the next screen.
+   *
+   * These memos must stay ABOVE the `initialLoading` early return: a hook
+   * that only runs on some renders breaks React's hook ordering, which is
+   * what rendered this screen blank.
+   */
+  const serviceTiles = React.useMemo(() => {
+    const firstClass = vcs[0];
+    const list = (firstClass?.services || []).filter((s: any) => s.has_price);
+    return list.slice(0, 4);
+  }, [vcs]);
+
+  /** Today's finished jobs, newest first, for the "Recent washes" list. */
+  const recentWashes = React.useMemo(() => {
+    const done = (today?.recent || today?.settled || []) as any[];
+    return Array.isArray(done) ? done.slice(0, 4) : [];
+  }, [today]);
+
   if (initialLoading) {
     return (
-      <View style={styles.container}>
-        <ScreenHeader title={firstName} subtitle={actor?.branch_name || 'Car Wash'} />
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <HomeTopBar
+          branch={actor?.branch_name || 'Car Wash'}
+          points={0}
+          onPoints={() => {}}
+          onMenu={() => navigation.openDrawer?.()}
+        />
         <ScrollView contentContainerStyle={styles.body}>
           <SkeletonList rows={4} />
         </ScrollView>
-      </View>
+      </SafeAreaView>
     );
   }
 
@@ -542,6 +676,31 @@ export default function WorkerHome({ navigation }: any) {
   const myWashing = washingJobs.filter((w: any) => !startedBySomeoneElse(w));
   const myReady = readyJobs.filter((w: any) => !startedBySomeoneElse(w));
 
+  // Client bookings nobody has accepted yet. Shown to every worker at the
+  // branch regardless of their own busy state — unlike myWashing/myReady,
+  // there is no "started by someone else" filter to apply, since nobody has
+  // started these at all. Oldest-first, matching the server's own ordering.
+  const requestedJobs = (queue.requested || []).slice().sort(
+    (a: any, b: any) => Number(b.elapsed_minutes || 0) - Number(a.elapsed_minutes || 0)
+  );
+
+  /** Tapping a tile pre-picks the service, then opens the car-details sheet. */
+  const startWithService = (svc: any) => {
+    if (vcs[0]?.id) setSelectedVc(vcs[0].id);
+    setSelectedSvc(svc.id);
+    setPendingStartToken(null);
+    setWashModalVisible(true);
+  };
+
+  const whenLabel = (iso?: string) => {
+    if (!iso) return 'Today';
+    const d = new Date(iso);
+    const mins = Math.floor((Date.now() - d.getTime()) / 60000);
+    if (mins < 1) return 'Just now';
+    if (mins < 60) return `${mins}m ago`;
+    if (mins < 1440) return `${Math.floor(mins / 60)}h ago`;
+    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  };
 
   const renderJob = (w: any) => {
     const isReady = w._type === 'ready';
@@ -650,11 +809,11 @@ export default function WorkerHome({ navigation }: any) {
               <TouchableOpacity
                 style={styles.linkBtn}
                 disabled={busyId === w.id}
-                onPress={() => settleUnverified(w)}
+                onPress={() => setPayTarget(w)}
                 activeOpacity={0.6}
               >
                 <Icon name="money-bill-wave" size={10} color={colors.textMuted} />
-                <Text style={styles.linkText}>Paid cash, no phone</Text>
+                <Text style={styles.linkText}>Take payment here</Text>
               </TouchableOpacity>
             )}
             {/* Only the worker who started a car can cancel it. Cancelling
@@ -678,16 +837,63 @@ export default function WorkerHome({ navigation }: any) {
     );
   };
 
-  return (
-    <View style={styles.container}>
-      <ScreenHeader title={`Hi, ${firstName}`} subtitle={actor?.branch_name || 'Car Wash'}>
-        {shift ? (
-          <>
-            <HeaderStat label="Cash on you" value={ugx(expected)} icon="wallet" />
-            <HeaderStat label="Cars finished" value={settledCount} icon="check-circle" />
-          </>
+  /** A client's self-service booking, waiting for any free worker to accept. */
+  const renderRequest = (w: any) => (
+    <Surface key={w.id} elevation="sm" padded="sm" style={styles.job}>
+      <View style={[styles.jobAccent, { backgroundColor: colors.info }]} />
+
+      <View style={styles.jobBody}>
+        <View style={styles.jobTop}>
+          <Text style={styles.carType} numberOfLines={1}>{w.vehicle_class_name}</Text>
+          <View style={{ flex: 1 }} />
+          {w.is_redemption ? (
+            <Text style={[styles.jobAmount, { color: colors.accent }]}>FREE</Text>
+          ) : (
+            <Text style={styles.jobAmount}>UGX {ugx(w.quoted_amount_ugx)}</Text>
+          )}
+        </View>
+
+        <View style={styles.jobMetaRow}>
+          <Text style={styles.serviceName} numberOfLines={1}>{w.service_name}</Text>
+          <Text style={styles.jobNoSmall}>#{w.job_no}</Text>
+          {w.is_redemption ? <Badge label="Free wash" tone="accent" small /> : null}
+        </View>
+
+        {w.client_name ? (
+          <View style={styles.clientRow}>
+            <Icon name="user-check" size={9} color={colors.success} />
+            <Text style={styles.clientName} numberOfLines={1}>{w.client_name}</Text>
+          </View>
         ) : null}
-      </ScreenHeader>
+
+        <View style={styles.jobFooter}>
+          <View style={styles.timeRow}>
+            <Icon name="clock" size={10} color={colors.textMuted} />
+            <Text style={styles.jobTime}>{minutesLabel(w.elapsed_minutes)}</Text>
+            {w.plate ? <Text style={styles.plate}>{w.plate}</Text> : null}
+          </View>
+
+          <GradientButton
+            title="Accept"
+            variant="dark"
+            size="sm"
+            icon="check"
+            loading={busyId === w.id}
+            onPress={() => acceptRequest(w.id)}
+          />
+        </View>
+      </View>
+    </Surface>
+  );
+
+  return (
+    <SafeAreaView style={styles.container} edges={['top']}>
+      <HomeTopBar
+        branch={actor?.branch_name || 'Car Wash'}
+        points={Number(points?.points_balance || 0)}
+        onPoints={() => setPointsOpen(true)}
+        onMenu={() => navigation.openDrawer?.()}
+      />
 
       <ScrollView
         style={styles.scroll}
@@ -695,6 +901,8 @@ export default function WorkerHome({ navigation }: any) {
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} />}
       >
+        <NotificationPrompt actorId={actor?.id} />
+
         {/* The day opens automatically, so this only appears if that failed —
             usually a connection problem or an account with no branch. */}
         {!shift ? (
@@ -708,91 +916,59 @@ export default function WorkerHome({ navigation }: any) {
             </Text>
             <GradientButton title="Try again" onPress={retryStartDay} loading={loading} icon="redo" size="lg" full style={{ marginTop: spacing.md }} />
           </Surface>
-        ) : (
-          <>
-            {/* Scanning is the intended path — it verifies the customer and
-                earns their loyalty. Starting manually stays available for
-                walk-ins with no app. */}
-            <GradientButton
-              title="Scan customer code"
-              onPress={() => setScanMode('start')}
-              icon="qrcode"
-              size="lg"
-              full
+        ) : null}
+
+        {/* The amount is passed separately so the banner can pick it out in
+            colour, and is compacted ("200K", not "200,000") — at this size
+            the design's line only fits on one row in the short form. */}
+        <RewardsBanner
+          headline={`Get up to ${compactUgx(Number(points?.value_ugx || 0) || 200000)} in rewards`}
+          amount={compactUgx(Number(points?.value_ugx || 0) || 200000)}
+          onPress={() => setPointsOpen(true)}
+        />
+
+        {/* Picking a service here pre-selects it, then opens the car-details
+            sheet — the same sheet the manual path uses, so there is one
+            place that starts a job rather than two. */}
+        <View style={styles.tileGrid}>
+          {serviceTiles.map((t: any, i: number) => (
+            <ServiceTile
+              key={t.id || i}
+              name={t.name}
+              price={t.price_ugx ? `UGX ${ugx(t.price_ugx)}` : undefined}
+              pointsBadge={i === 0 ? 'With points' : undefined}
+              badge={t.is_new ? 'New' : undefined}
+              badgeTone="accent"
+              meta={t.meta}
+              selected={selectedSvc === t.id}
+              onPress={() => startWithService(t)}
             />
-            <GradientButton
-              title="No customer code"
-              onPress={() => { setPendingStartToken(null); setWashModalVisible(true); }}
-              variant="secondary"
-              icon="plus"
-              full
-              style={{ marginTop: -spacing.sm }}
-            />
-
-            {/* ── Your day so far ── the cash figure is what a worker is
-                actually accountable for, so it leads. */}
-            <View>
-              <SectionHeader title="Your day so far" icon="sun" />
-              <Surface elevation="sm" style={{ gap: spacing.lg }}>
-                <View style={styles.earnRow}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.earnLabel}>MONEY YOU TOOK TODAY</Text>
-                    <View style={styles.earnAmountRow}>
-                      <Text style={styles.earnCurrency}>UGX</Text>
-                      <Text style={styles.earnAmount} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}>
-                        {ugx(cashTaken)}
-                      </Text>
-                    </View>
-                  </View>
-                  <View style={styles.earnIcon}>
-                    <Icon name="coins" size={15} color={colors.primary} />
-                  </View>
-                </View>
-
-                <View style={styles.earnDivider} />
-
-                <View style={styles.dayRow}>
-                  <View style={styles.dayItem}>
-                    <Text style={styles.dayValue}>{paidCount}</Text>
-                    <Text style={styles.dayLabel}>Cars you finished{'\n'}and got paid for</Text>
-                  </View>
-                  <View style={styles.dayDivider} />
-                  {/* Free washes explain why cash can be lower than car count */}
-                  <View style={styles.dayItem}>
-                    <Text style={[styles.dayValue, freeGiven > 0 && { color: colors.accent }]}>
-                      {freeGiven}
-                    </Text>
-                    <Text style={styles.dayLabel}>Free washes{'\n'}you gave out</Text>
-                  </View>
-                  <View style={styles.dayDivider} />
-                  <View style={styles.dayItem}>
-                    <Text style={styles.dayValue}>{handovers}</Text>
-                    <Text style={styles.dayLabel}>Cars you started{'\n'}someone else finished</Text>
-                  </View>
-                </View>
-              </Surface>
-            </View>
-          </>
-        )}
-
-        {/* ── Cars being washed ── follows the real workflow: a car is washed
-            first, then paid for. ── */}
-        <View>
-          <SectionHeader title="Cars being washed" count={myWashing.length} icon="soap" />
-          {myWashing.length === 0 ? (
-            <Surface elevation="sm" padded="lg">
-              <EmptyState
-                icon="car"
-                title="No cars being washed"
-                message={shift ? 'Scan a customer code when the next car arrives.' : 'Tap "Start work" to begin.'}
-              />
-            </Surface>
-          ) : (
-            <View style={{ gap: spacing.sm }}>{myWashing.map(renderJob)}</View>
-          )}
+          ))}
         </View>
 
-        {/* ── Waiting to be paid ── */}
+        <ScanBar
+          onPress={() => setScanMode('start')}
+          onManual={() => { setPendingStartToken(null); setWashModalVisible(true); }}
+        />
+
+        {/* Self-service bookings waiting for a worker — shown to everyone at
+            the branch, busy or not; only the Accept tap itself is gated. */}
+        {requestedJobs.length > 0 && (
+          <View>
+            <SectionHeader title="New requests" count={requestedJobs.length} icon="qrcode" />
+            <View style={{ gap: spacing.sm }}>{requestedJobs.map(renderRequest)}</View>
+          </View>
+        )}
+
+        {/* Live work comes before history — a car on the ramp matters more
+            than one finished an hour ago. */}
+        {myWashing.length > 0 && (
+          <View>
+            <SectionHeader title="Cars being washed" count={myWashing.length} icon="soap" />
+            <View style={{ gap: spacing.sm }}>{myWashing.map(renderJob)}</View>
+          </View>
+        )}
+
         {myReady.length > 0 && (
           <View>
             <SectionHeader title="Waiting to be paid" count={myReady.length} icon="hand-holding-usd" />
@@ -800,14 +976,44 @@ export default function WorkerHome({ navigation }: any) {
           </View>
         )}
 
+        <View>
+          <Text style={styles.sectionLabel}>Recent washes</Text>
+          <View style={{ gap: spacing.sm }}>
+            {recentWashes.length === 0 ? (
+              <Surface elevation="sm" padded="lg">
+                <EmptyState
+                  icon="car"
+                  title="Nothing yet today"
+                  message="Scan a customer code when the next car arrives."
+                />
+              </Surface>
+            ) : (
+              recentWashes.map((w: any) => (
+                <RecentRow
+                  key={w.id}
+                  title={w.service_name || 'Wash'}
+                  subtitle={`Completed · ${whenLabel(w.settled_at || w.started_at)}`}
+                  amount={`UGX ${ugx(w.amount_ugx || 0)}`}
+                  tone={Number(w.amount_ugx) === 0 ? 'accent' : 'brand'}
+                />
+              ))
+            )}
+
+            <PromptRow
+              icon="shield-alt"
+              title="Your points"
+              subtitle={`${Number(points?.lifetime_earned || 0)} earned all time · tap to see history`}
+              onPress={() => setPointsOpen(true)}
+            />
+          </View>
+        </View>
+
+        <PromoCard onPress={() => setScanMode('start')} />
+
         {/* A colleague's cars are deliberately NOT listed here. A handover
             starts from the customer: they present their code, you scan it,
             and if you did not start that job the app asks why before it
             settles. Browsing other people's work is not part of the flow. */}
-
-        {/* No end-of-day controls here by design. Handing in cash is the
-            manager's job on their Cash Handover screen — the worker just
-            works, and their day rolls over automatically. */}
       </ScrollView>
 
       {/* ── Cancel a car ── */}
@@ -843,99 +1049,63 @@ export default function WorkerHome({ navigation }: any) {
         />
       </FormSheet>
 
-      {/* ── Start wash sheet ── */}
-      <Modal visible={washModalVisible} animationType="slide" transparent onRequestClose={() => setWashModalVisible(false)}>
-        <View style={styles.modalOverlay}>
-          <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={() => setWashModalVisible(false)} />
-          <View style={[styles.sheet, { paddingBottom: spacing.xl + insets.bottom }]}>
-            <View style={styles.grabber} />
-            <Text style={styles.sheetTitle}>New car</Text>
+      {toast && (
+        <SuccessToast
+          points={toast.points}
+          onDismiss={() => setToast(null)}
+          onViewPoints={() => { setToast(null); setPointsOpen(true); }}
+        />
+      )}
 
-            {/* Make it obvious whether this job will be linked to a customer */}
-            <View style={[styles.linkState, pendingStartToken ? styles.linkStateOn : styles.linkStateOff]}>
-              <Icon
-                name={pendingStartToken ? 'check-circle' : 'exclamation-circle'}
-                size={12}
-                color={pendingStartToken ? colors.success : colors.warning}
-              />
-              <Text style={[styles.linkStateText, { color: pendingStartToken ? colors.success : colors.warning }]}>
-                {pendingStartToken
-                  ? 'Customer scanned — they will get a stamp for this wash'
-                  : 'No customer scanned — no stamp toward a free wash'}
-              </Text>
-            </View>
+      {/* ── Points balance and history ── */}
+      <PointsSheet
+        visible={pointsOpen}
+        onClose={() => setPointsOpen(false)}
+        balance={Number(points?.points_balance || 0)}
+        history={points?.history || []}
+        canRedeem={!!points?.can_redeem}
+        minRedeem={points?.min_redeem_points}
+      />
 
-            {/* No "use a free wash" checkbox here: a scanned start-token is a
-                one-shot opaque code — the backend only learns which customer
-                it belongs to (and whether they have credits) once the wash is
-                actually created. Offering the choice before that would let a
-                worker tick it for a customer who has nothing saved, which is
-                exactly the confusing failure this used to produce. The choice
-                is offered right after starting instead, once it is known. */}
+      {/* ── The receipt, once payment has gone through ── */}
+      <PaymentReceipt
+        visible={!!receipt}
+        onClose={() => {
+          // Hand over to the toast so the worker still sees what they
+          // earned once they are back on the home screen.
+          setToast({ points: receipt?.pointsEarned });
+          setReceipt(null);
+        }}
+        reference={receipt?.reference || ''}
+        item={receipt?.item || ''}
+        paymentType={receipt?.paymentType || 'Cash'}
+        recipient={receipt?.recipient || '92 CarWash'}
+        amountUgx={receipt?.amountUgx || 0}
+        pointsEarned={receipt?.pointsEarned}
+      />
 
-            <ScrollView style={styles.sheetScroll} showsVerticalScrollIndicator={false}>
-              <Text style={styles.sheetLabel}>CAR TYPE</Text>
-              <View style={styles.optionWrap}>
-                {vcs.map((v) => {
-                  const on = selectedVc === v.id;
-                  return (
-                    <TouchableOpacity
-                      key={v.id}
-                      onPress={() => { setSelectedVc(v.id); setSelectedSvc(''); }}
-                      style={[styles.chip, on && styles.chipOn]}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={[styles.chipText, on && styles.chipTextOn]}>{v.name}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
+      {/* ── Take payment: amount, then confirm ── */}
+      <PaymentSheet
+        visible={!!payTarget}
+        onClose={() => setPayTarget(null)}
+        amountUgx={Number(payTarget?.quoted_amount_ugx || payTarget?.amount_ugx || 0)}
+        jobLabel={payTarget ? `${payTarget.vehicle_class_name || 'Car'} · ${payTarget.service_name || 'Wash'}` : undefined}
+        submitting={busyId === payTarget?.id}
+        onConfirm={(p) => runCashSettle(payTarget, undefined, p)}
+      />
 
-              {selectedVc ? (
-                <>
-                  <Text style={[styles.sheetLabel, { marginTop: spacing.lg }]}>SERVICE</Text>
-                  {availableServices.filter((s: any) => s.has_price).map((s: any) => {
-                    const on = selectedSvc === s.id;
-                    return (
-                      <TouchableOpacity
-                        key={s.id}
-                        onPress={() => setSelectedSvc(s.id)}
-                        style={[styles.svcRow, on && styles.svcRowOn]}
-                        activeOpacity={0.7}
-                      >
-                        <View style={[styles.radio, on && styles.radioOn]}>
-                          {on ? <View style={styles.radioDot} /> : null}
-                        </View>
-                        <Text style={[styles.svcName, on && styles.svcNameOn]}>{s.name}</Text>
-                        <Text style={[styles.svcPrice, on && styles.svcPriceOn]}>
-                          UGX {ugx(s.price_ugx)}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </>
-              ) : null}
-            </ScrollView>
-
-            {/* Live quote so the worker confirms the price before committing */}
-            {selectedService ? (
-              <View style={styles.quote}>
-                <Text style={styles.quoteLabel}>TOTAL</Text>
-                <Text style={styles.quoteValue}>UGX {ugx(selectedService.price_ugx)}</Text>
-              </View>
-            ) : null}
-
-            <View style={styles.sheetActions}>
-              <GradientButton title="Cancel" variant="ghost" onPress={() => setWashModalVisible(false)} />
-              <GradientButton title="Start washing" onPress={startWash} loading={loading} icon="play" style={{ flex: 1 }} />
-            </View>
-          </View>
-        </View>
-
-        {/* "Choose a car type" and other validation fires from inside this
-            sheet — hosted here so it is not trapped behind it on Android. */}
-        <AlertHost />
-      </Modal>
+      {/* ── Start a wash: car details, then confirm ── */}
+      <StartWashFlow
+        visible={washModalVisible}
+        onClose={() => { setWashModalVisible(false); setSelectedSvc(''); }}
+        onConfirm={startWash}
+        vehicleClasses={vcs}
+        initialVehicleClassId={selectedVc}
+        initialServiceId={selectedSvc}
+        submitting={loading}
+        linkedToCustomer={!!pendingStartToken}
+        pointsPerWash={points?.scheme_active ? points?.points_per_wash ?? null : null}
+      />
 
       {/* ── QR scanner ── one sheet serving all three scan flows ── */}
       <ScannerSheet
@@ -1013,7 +1183,7 @@ export default function WorkerHome({ navigation }: any) {
           options={HANDOVER_REASONS as unknown as { value: string; label: string }[]}
         />
       </FormSheet>
-    </View>
+    </SafeAreaView>
   );
 }
 
@@ -1023,6 +1193,18 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   container: { flex: 1, backgroundColor: colors.bg },
+
+  // Two-up service grid, as in the mockup.
+  // rowGap as well as column gap, or the wrapped second row sits flush
+  // against the first.
+  tileGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, justifyContent: 'space-between' },
+  sectionLabel: {
+    fontSize: font.regular,
+    fontWeight: weight.heavy,
+    color: colors.text,
+    letterSpacing: tracking.tight,
+    marginBottom: spacing.sm,
+  },
   scroll: { flex: 1 },
   body: { padding: spacing.lg, paddingBottom: spacing.xxxl, gap: spacing.lg },
 

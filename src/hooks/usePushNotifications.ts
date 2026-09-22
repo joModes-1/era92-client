@@ -16,9 +16,35 @@ Notifications.setNotificationHandler({
   }),
 });
 
+async function ensureAndroidChannel() {
+  if (Platform.OS !== 'android') return;
+  // Android silently drops the permission prompt without a channel to
+  // attach it to — this has to exist before requesting.
+  await Notifications.setNotificationChannelAsync('default', {
+    name: 'Wash updates',
+    importance: Notifications.AndroidImportance.HIGH,
+    vibrationPattern: [0, 250, 250, 250],
+    lightColor: colors.primary,
+  });
+}
+
+async function registerToken(actorId: string) {
+  const projectId =
+    Constants.expoConfig?.extra?.eas?.projectId ??
+    (Constants as any).easConfig?.projectId;
+  if (!projectId) return; // Expo Go / no EAS project — nothing to register against
+
+  const tokenResponse = await Notifications.getExpoPushTokenAsync({ projectId });
+  await api.registerDevice(tokenResponse.data, Platform.OS === 'ios' ? 'ios' : 'android');
+}
+
 /**
- * Asks for notification permission and registers this device's push token
- * with the server, once per signed-in actor.
+ * Registers this device's push token with the server, once per signed-in
+ * actor — but only if notification permission is already granted. It never
+ * itself shows the OS permission prompt: Apple review treats a permission
+ * dialog appearing unprompted right after sign-in as poor UX and a common
+ * rejection reason, so the actual ask lives in `requestNotificationPermission`
+ * below, fired only from an explicit user action (see NotificationPrompt).
  *
  * The server (src/modules/notify) already sends a real push for
  * "ready_for_collection" and other client events — it always has. Nothing
@@ -33,41 +59,51 @@ export function usePushNotifications(actorId: string | null | undefined) {
 
     (async () => {
       try {
-        if (Platform.OS === 'android') {
-          // Android silently drops the permission prompt without a channel
-          // to attach it to — this has to exist before requesting.
-          await Notifications.setNotificationChannelAsync('default', {
-            name: 'Wash updates',
-            importance: Notifications.AndroidImportance.HIGH,
-            vibrationPattern: [0, 250, 250, 250],
-            lightColor: colors.primary,
-          });
-        }
-
         const existing = await Notifications.getPermissionsAsync();
-        let status = existing.status;
-        if (status !== 'granted') {
-          const requested = await Notifications.requestPermissionsAsync();
-          status = requested.status;
-        }
-        // Declined is a normal, final answer — the app still works without
-        // it, just without a tray notification for a car being ready.
-        if (status !== 'granted') return;
+        console.log('[push] permission status:', existing.status);
+        if (existing.status !== 'granted') return;
 
-        const projectId =
-          Constants.expoConfig?.extra?.eas?.projectId ??
-          (Constants as any).easConfig?.projectId;
-        if (!projectId) return; // Expo Go / no EAS project — nothing to register against
-
-        const tokenResponse = await Notifications.getExpoPushTokenAsync({ projectId });
-
-        await api.registerDevice(tokenResponse.data, Platform.OS === 'ios' ? 'ios' : 'android');
+        await ensureAndroidChannel();
+        console.log('[push] channel ready, registering token for', actorId);
+        await registerToken(actorId);
+        console.log('[push] token registered successfully');
         registeredFor.current = actorId;
-      } catch {
-        // Never block sign-in on this — a phone with notifications blocked
-        // at the OS level, or offline at this exact moment, still has an app
-        // that works; it just falls back to the in-app alert as before.
+      } catch (e: any) {
+        // TEMPORARY: surfaced while diagnosing why no token has ever reached
+        // the server. Revert to a silent catch once this is resolved — a
+        // phone with notifications blocked at the OS level, or offline at
+        // this exact moment, should still have an app that works, falling
+        // back to the in-app alert without bothering anyone.
+        console.log('[push] registration FAILED:', e?.message || e, e?.code || '');
       }
     })();
   }, [actorId]);
+}
+
+/**
+ * The actual permission ask — call this only from a user-initiated action
+ * (a button tap, an explicit prompt the user can dismiss), never on mount
+ * or automatically after sign-in. Returns the resulting status so the
+ * caller can show its own feedback.
+ */
+export async function requestNotificationPermission(
+  actorId: string
+): Promise<Notifications.PermissionStatus> {
+  await ensureAndroidChannel();
+  const existing = await Notifications.getPermissionsAsync();
+  let status = existing.status;
+  if (status !== 'granted') {
+    const requested = await Notifications.requestPermissionsAsync();
+    status = requested.status;
+  }
+  if (status === 'granted') {
+    try {
+      await registerToken(actorId);
+    } catch {
+      // Permission granted but registration failed (offline, no EAS
+      // project) — the permission itself still stands; the app will pick
+      // up registration the next time usePushNotifications runs.
+    }
+  }
+  return status;
 }

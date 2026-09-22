@@ -42,10 +42,10 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/splash-icon.png",
-          "imageWidth": 220,
+          "image": "./assets/splash-wordmark.png",
+          "imageWidth": 300,
           "resizeMode": "contain",
-          "backgroundColor": "#E91E63"
+          "backgroundColor": "#3B2A9E"
         }
       ],
       "expo-updates",
@@ -53,9 +53,10 @@
         "expo-notifications",
         {
           "icon": "./assets/android-icon-monochrome.png",
-          "color": "#E91E63"
+          "color": "#8B3FE8"
         }
-      ]
+      ],
+      "expo-font"
     ],
     "extra": {
       "eas": {

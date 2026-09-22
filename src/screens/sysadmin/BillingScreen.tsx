@@ -431,7 +431,7 @@ const styles = StyleSheet.create({
   bloom: {
     position: 'absolute', top: -70, right: -40,
     width: 180, height: 180, borderRadius: 90,
-    backgroundColor: 'rgba(233,30,99,0.18)',
+    backgroundColor: colors.bloomBrandSoft,
   },
   heroKicker: {
     fontSize: font.micro, fontWeight: weight.heavy,

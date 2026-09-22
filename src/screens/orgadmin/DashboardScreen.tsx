@@ -122,7 +122,7 @@ export default function DashboardScreen() {
             the sysadmin's near-black treatment) read as a different color
             entirely rather than "the app's pink". */}
         <LinearGradient
-          colors={[colors.pink[600], colors.primary, colors.accent]}
+          colors={[...colors.gradientBrandDeep, colors.primary]}
           locations={[0, 0.55, 1]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}

@@ -1,0 +1,780 @@
+import React from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { colors, radii, font, spacing, weight, tracking, shadow } from '../../theme';
+import Icon from '../../components/Icon';
+import Wordmark from '../../components/Wordmark';
+import GradientText from '../../components/GradientText';
+import GradientIcon from '../../components/GradientIcon';
+import ScanBarStripes from '../../components/ScanBarStripes';
+import O1Badge from '../../components/O1Badge';
+import { artFor } from './serviceArt';
+
+/**
+ * The pieces that make up the worker home, kept out of WorkerHome.tsx so
+ * that file stays about behaviour — shifts, scanning, handovers — rather
+ * than growing another few hundred lines of layout.
+ */
+
+/**
+ * Brand bar: the 92 CarWash mark, the branch, and the points pill.
+ *
+ * The points pill is a worker-only concept (staff earn a per-wash incentive;
+ * a client's loyalty progress has its own banner below, not a pill up here)
+ * — so it and its tap target are omitted entirely when `points` is left out,
+ * rather than shown as a dead or zeroed pill.
+ */
+export function HomeTopBar({
+  branch, points, onPoints, onMenu,
+}: {
+  branch: string;
+  points?: number;
+  onPoints?: () => void;
+  onMenu: () => void;
+}) {
+  return (
+    <View style={s.topBar}>
+      <View style={{ flex: 1 }}>
+        {/* Untinted for the same reason as the welcome screen — white bar,
+            and the text build's default ink is already correct. */}
+        <Wordmark height={16} />
+        <View style={s.branchRow}>
+          <Text style={s.branch} numberOfLines={1}>{branch}</Text>
+          <Icon name="chevron-down" size={9} color={colors.textMuted} />
+        </View>
+      </View>
+
+      {points !== undefined ? (
+        <TouchableOpacity onPress={onPoints} activeOpacity={0.85}>
+          <LinearGradient
+            colors={colors.pointsBadge}
+            locations={colors.pointsBadgeLocations}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={s.pointsPill}
+          >
+            <View style={s.pointsStar}>
+              <GradientIcon
+                name="star"
+                size={9}
+                colorsArr={colors.rewardIconGradient}
+                start={colors.rewardIconGradientStart}
+                end={colors.rewardIconGradientEnd}
+              />
+            </View>
+            <Text style={s.pointsText}>{points} Points</Text>
+          </LinearGradient>
+        </TouchableOpacity>
+      ) : null}
+
+      <TouchableOpacity onPress={onMenu} hitSlop={10} style={s.menuBtn} activeOpacity={0.6}>
+        <View style={s.menuLine} />
+        <View style={s.menuLine} />
+        <View style={s.menuLine} />
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+/**
+ * The rewards banner — what the points are building toward.
+ *
+ * The headline arrives as one string but is not painted as one: the design
+ * picks out everything from the amount onward ("200K in rewards") in
+ * pink-red, leaving only the lead-in ("Get up to") black. `amount` names
+ * where that coloured run starts; the line falls back to plain black if it
+ * isn't found, so a caller can never break the banner by passing a
+ * mismatched pair.
+ */
+export function RewardsBanner({
+  onPress, headline, amount,
+}: {
+  onPress: () => void;
+  headline: string;
+  amount?: string;
+}) {
+  const at = amount ? headline.indexOf(amount) : -1;
+  const parts = at >= 0
+    ? [headline.slice(0, at), headline.slice(at)]
+    : null;
+
+  return (
+    <TouchableOpacity onPress={onPress} activeOpacity={0.85} style={s.rewardOuter}>
+      <LinearGradient
+        colors={colors.promoBanner}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0 }}
+        style={s.rewardCard}
+      >
+        <View style={s.rewardCopy}>
+          {/* The star rides on the label's own line rather than beside the
+              whole two-line block, so it reads as part of "Points by wash"
+              and matches that line's height instead of the card's. */}
+          <View style={s.rewardLabelRow}>
+            <LinearGradient
+              colors={colors.rewardIconGradient}
+              start={colors.rewardIconGradientStart}
+              end={colors.rewardIconGradientEnd}
+              style={s.rewardIcon}
+            >
+              <Icon name="star" size={11} color="#fff" />
+            </LinearGradient>
+            <Text style={s.rewardLabel} numberOfLines={1}>Points by wash</Text>
+          </View>
+          {parts ? (
+            <View style={s.rewardHeadlineRow}>
+              <Text style={s.rewardHeadlineLead} numberOfLines={1}>{parts[0]}</Text>
+              <GradientText
+                text={parts[1]}
+                style={s.rewardHeadline}
+                colorsArr={colors.rewardAmountGradient}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                numberOfLines={1}
+              />
+            </View>
+          ) : (
+            <Text style={[s.rewardHeadline, { marginTop: 2 }]} numberOfLines={1}>{headline}</Text>
+          )}
+        </View>
+
+        <View style={s.rewardChevron}>
+          <Icon name="chevron-right" size={15} color={colors.ink[900]} />
+        </View>
+      </LinearGradient>
+    </TouchableOpacity>
+  );
+}
+
+/**
+ * The client-facing sibling of RewardsBanner: same card, same star icon and
+ * chevron, but built around wash-count progress rather than a cash headline
+ * a worker's incentive earns. Shown even at zero washes — a new client
+ * should see the loyalty programme exists and what it takes, not have the
+ * card disappear until they have something to show.
+ */
+export function WashCountBanner({
+  onPress, done, required,
+}: {
+  onPress: () => void;
+  /** Washes completed toward the next free one. */
+  done: number;
+  /** Washes needed to earn a free one. */
+  required: number;
+}) {
+  const remaining = Math.max(0, required - done);
+  const headline = remaining === 0
+    ? 'Free wash unlocked'
+    : `${remaining} more ${remaining === 1 ? 'wash' : 'washes'} to go`;
+
+  return (
+    <TouchableOpacity onPress={onPress} activeOpacity={0.85} style={s.rewardOuter}>
+      <LinearGradient
+        colors={colors.promoBanner}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0 }}
+        style={s.rewardCard}
+      >
+        <View style={s.rewardCopy}>
+          <View style={s.rewardLabelRow}>
+            <LinearGradient
+              colors={colors.rewardIconGradient}
+              start={colors.rewardIconGradientStart}
+              end={colors.rewardIconGradientEnd}
+              style={s.rewardIcon}
+            >
+              <Icon name="star" size={11} color="#fff" />
+            </LinearGradient>
+            <Text style={s.rewardLabel} numberOfLines={1}>Car washes</Text>
+          </View>
+          <View style={s.rewardHeadlineRow}>
+            <GradientText
+              text={`${done}/${required}`}
+              style={s.rewardHeadline}
+              colorsArr={colors.rewardAmountGradient}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              numberOfLines={1}
+            />
+            <Text style={[s.rewardHeadlineLead, { marginLeft: 6 }]} numberOfLines={1}>
+              {headline}
+            </Text>
+          </View>
+        </View>
+
+        <View style={s.rewardChevron}>
+          <Icon name="chevron-right" size={15} color={colors.ink[900]} />
+        </View>
+      </LinearGradient>
+    </TouchableOpacity>
+  );
+}
+
+/** One service tile in the pick-a-wash grid. */
+export function ServiceTile({
+  name, price, badge, badgeTone, pointsBadge, meta, onPress, selected,
+}: {
+  name: string;
+  price?: string;
+  badge?: string;
+  badgeTone?: 'brand' | 'accent';
+  /** The floating "With points" pill over the art, as in the mockup's
+   *  first tile — distinct from `badge`, which sits on the tile's edge. */
+  pointsBadge?: string;
+  meta?: string;
+  onPress: () => void;
+  selected?: boolean;
+}) {
+  const art = artFor(name);
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.85}
+      style={[s.tile, selected && s.tileSelected]}
+    >
+      {/* The artwork owns the top half of the tile, centred — in the mockup
+          the vehicle is the thing you recognise, not the label. Both
+          overhanging badges anchor to this pill, not the tile — there is
+          no card edge left for them to pin to. */}
+      <View style={[s.tileArt, selected && s.tileArtSelected]}>
+        {badge ? (
+          <View style={[s.tileBadge, badgeTone === 'accent' && s.tileBadgeAccent]}>
+            <Text style={s.tileBadgeText}>{badge}</Text>
+          </View>
+        ) : null}
+        {pointsBadge ? (
+          <LinearGradient
+            colors={colors.rewardIconGradient}
+            start={colors.rewardIconGradientStart}
+            end={colors.rewardIconGradientEnd}
+            style={s.tilePointsPill}
+          >
+            <Text style={s.tilePointsPillText}>{pointsBadge}</Text>
+          </LinearGradient>
+        ) : null}
+        {art.image ? (
+          <Image source={art.image} style={s.tileArtImage} resizeMode="contain" />
+        ) : (
+          <Icon name={art.icon} size={40} color={colors.ink[400]} />
+        )}
+      </View>
+
+      <View style={s.tileFoot}>
+        <Text style={s.tileName} numberOfLines={1}>{name}</Text>
+        {price ? <Text style={s.tilePrice} numberOfLines={1}>{price}</Text> : null}
+        {meta ? <Text style={s.tileMeta} numberOfLines={1}>{meta}</Text> : null}
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+/** The wide orange call to action that starts a job by scanning. */
+export function ScanBar({ onPress, onManual }: { onPress: () => void; onManual: () => void }) {
+  return (
+    <View>
+      <TouchableOpacity onPress={onPress} activeOpacity={0.9}>
+        <LinearGradient
+          colors={colors.gradientScan}
+          locations={colors.gradientScanLocations}
+          start={colors.gradientActionStart}
+          end={colors.gradientActionEnd}
+          style={s.scanBar}
+        >
+          {/* The cars sit against the left edge and bleed off the bottom of
+              the bar, exactly as in the mockup. Absolute so they cannot
+              push the label off-centre as the bar's width changes. */}
+          <Image
+            source={require('../../../assets/scan-cars.png')}
+            style={s.scanCars}
+            resizeMode="contain"
+          />
+          {/* The diagonal stripe pattern from the Figma export, sitting on
+              its own in the middle of the bar — a decorative patch, not a
+              full-width overlay, per request. */}
+          <View style={s.scanStripes} pointerEvents="none">
+            <ScanBarStripes width={90} height={46} />
+          </View>
+          <Text style={s.scanText}>Scan to wash</Text>
+          <View style={s.scanQr}>
+            <Icon name="qrcode" size={19} color={colors.ink[900]} />
+          </View>
+        </LinearGradient>
+      </TouchableOpacity>
+      <TouchableOpacity onPress={onManual} activeOpacity={0.6} style={s.manualBtn}>
+        <Text style={s.manualText}>Scan to enter car details</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+/** A finished job in the recent list. */
+export function RecentRow({
+  title, subtitle, amount, tone, onPress,
+}: {
+  title: string;
+  subtitle: string;
+  amount: string;
+  tone?: 'brand' | 'accent';
+  onPress?: () => void;
+}) {
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={onPress ? 0.7 : 1}
+      disabled={!onPress}
+      style={s.recentRow}
+    >
+      <View style={s.recentIcon}>
+        <Icon name="car" size={14} color={colors.textSecondary} />
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={s.recentTitle} numberOfLines={1}>{title}</Text>
+        <Text style={s.recentSub} numberOfLines={1}>{subtitle}</Text>
+      </View>
+      <Text style={[s.recentAmount, tone === 'accent' && { color: colors.accent }]}>
+        {amount}
+      </Text>
+    </TouchableOpacity>
+  );
+}
+
+/** A nudge row — the mockup's "Verify your account" prompt. */
+export function PromptRow({
+  icon, title, subtitle, onPress,
+}: {
+  icon: string;
+  title: string;
+  subtitle: string;
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity onPress={onPress} activeOpacity={0.75} style={s.recentRow}>
+      <View style={[s.recentIcon, { backgroundColor: colors.infoSoft }]}>
+        <Icon name={icon} size={13} color={colors.info} />
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={s.recentTitle} numberOfLines={1}>{title}</Text>
+        <Text style={s.recentSub} numberOfLines={1}>{subtitle}</Text>
+      </View>
+      <Icon name="chevron-right" size={11} color={colors.textMuted} />
+    </TouchableOpacity>
+  );
+}
+
+/**
+ * The confirmation that sits over the home screen after a payment.
+ *
+ * Distinct from the receipt page, which is the formal record handed to the
+ * customer. This is the worker's own reassurance once they are back at the
+ * home screen — it names what they earned and goes away when dismissed, so
+ * it never blocks the next car.
+ */
+export function SuccessToast({
+  points, onDismiss, onViewPoints,
+}: {
+  points?: number | null;
+  onDismiss: () => void;
+  onViewPoints: () => void;
+}) {
+  return (
+    <View style={s.toastWrap} pointerEvents="box-none">
+      <LinearGradient
+        colors={colors.gradientBrandDeep}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={s.toast}
+      >
+        <TouchableOpacity onPress={onDismiss} style={s.toastClose} hitSlop={12} activeOpacity={0.7}>
+          <Icon name="times" size={12} color="rgba(255,255,255,0.85)" />
+        </TouchableOpacity>
+
+        <Text style={s.toastTitle}>Payment Successfully</Text>
+        <Text style={s.toastBody}>
+          You have successfully taken payment for this wash
+          {points ? <Text style={s.toastPoints}> and earned +{points} points</Text> : null}
+        </Text>
+
+        <TouchableOpacity onPress={onViewPoints} style={s.toastBtn} activeOpacity={0.8}>
+          <Text style={s.toastBtnText}>View Points</Text>
+        </TouchableOpacity>
+      </LinearGradient>
+    </View>
+  );
+}
+
+/** The promotional card that closes the page. */
+export function PromoCard({ onPress }: { onPress: () => void }) {
+  return (
+    <TouchableOpacity onPress={onPress} activeOpacity={0.9}>
+      <LinearGradient
+        colors={colors.gradientBrandDeep}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={s.promo}
+      >
+        <View style={{ flex: 1 }}>
+          <Text style={s.promoLine}>WASH 2 CARS</Text>
+          <View style={s.promoRow}>
+            <Text style={s.promoLine}>For</Text>
+            <O1Badge size={24} />
+            <Text style={s.promoLine}>price</Text>
+          </View>
+          <View style={s.promoCta}>
+            <Text style={s.promoCtaText}>Grab offer</Text>
+          </View>
+        </View>
+        <Icon name="car" size={44} color="rgba(255,255,255,0.9)" />
+      </LinearGradient>
+    </TouchableOpacity>
+  );
+}
+
+const s = StyleSheet.create({
+  // ── Top bar ──
+  topBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.md,
+    backgroundColor: colors.bgCard,
+  },
+  branchRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 1 },
+  branch: { fontSize: font.xs, color: colors.textMuted, fontWeight: weight.medium },
+
+  pointsPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 7,
+    borderRadius: radii.full,
+  },
+  pointsText: { fontSize: font.sm, fontWeight: weight.heavy, color: '#fff' },
+  pointsStar: {
+    width: 16, height: 16, borderRadius: radii.full,
+    backgroundColor: colors.pointsStarBg,
+    alignItems: 'center', justifyContent: 'center',
+  },
+
+  menuBtn: { width: 28, height: 28, justifyContent: 'center', gap: 4, alignItems: 'flex-end' },
+  menuLine: { width: 17, height: 2, borderRadius: 1, backgroundColor: colors.text },
+
+  // ── Rewards banner ──
+  // A tint alone was too faint to read as its own section — it needs a
+  // visible edge and a filled icon to hold the eye, as it does in the design.
+  // The border lives on the outer view and the gradient fills inside it,
+  // so the 1px rule cannot be painted over by the gradient's own edge.
+  rewardOuter: {
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    borderColor: colors.promoBannerBorder,
+    // Clips the gradient's square corners to the rounded border.
+    overflow: 'hidden',
+  },
+  // 16px radius and 16px padding, per the Figma frame. The design's
+  // `space-between` is what pushes the chevron to the right edge; here the
+  // copy block takes the slack with flex: 1, which does the same thing
+  // without letting the star and the text drift apart.
+  rewardCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+  },
+  // Sized to the label it sits beside (font.regular, 18px line box) rather
+  // than to the card, so the two read as one line.
+  rewardIcon: {
+    width: 18, height: 18, borderRadius: radii.full,
+    alignItems: 'center', justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  rewardCopy: { flex: 1 },
+  rewardLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  rewardLabel: {
+    fontSize: font.regular,
+    lineHeight: 18,
+    color: colors.ink[900],
+    fontWeight: weight.medium,
+  },
+  rewardHeadlineRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    marginTop: 2,
+  },
+  rewardHeadline: {
+    fontSize: font.xl,
+    fontWeight: weight.black,
+    color: colors.ink[900],
+    letterSpacing: tracking.tight,
+  },
+  // The lead-in ("Get up to") is noticeably lighter than the coloured
+  // amount that follows it in the design — sharing rewardHeadline's black
+  // weight made the whole line read as one bold block instead of two.
+  rewardHeadlineLead: {
+    fontSize: font.xl,
+    fontWeight: weight.medium,
+    color: colors.ink[900],
+    letterSpacing: tracking.tight,
+  },
+  // 32x32 per the Figma frame, not 34 — close enough to have been easy to
+  // miss, but the arrow inside was the bigger gap: 12px read much smaller
+  // than the frame's own chevron (8.78 x 14.89, i.e. sized by its height).
+  rewardChevron: {
+    width: 32, height: 32, borderRadius: radii.full,
+    backgroundColor: '#fff',
+    alignItems: 'center', justifyContent: 'center',
+  },
+
+  // ── Service tiles ──
+  // Two per row: 48% leaves room for the gap between them, and the tiles
+  // wrap into a 2x2 rather than being squeezed into a single row. No card
+  // background or border on the tile itself — the mockup has no box around
+  // the whole tile, only a pill-shaped tint sitting behind the vehicle art
+  // (`tileArt` below); the label floats on the plain page background.
+  tile: {
+    width: '48%',
+    paddingTop: spacing.sm,
+    minHeight: 118,
+  },
+  // A selected tile still needs a visible state without the tile becoming
+  // a box — a ring around the art's own pill reads as "chosen" without
+  // introducing the card edge the design doesn't have.
+  tileSelected: {},
+  // The rounded tint sits behind the art only, not the label — its own
+  // element, not the tile's background, and sized to leave room for the
+  // "With points" pill to overhang its top edge without clipping.
+  // `overflow: visible` (the default, stated for clarity) is what lets the
+  // vehicle image below bleed past this pill's own edge, per the mockup —
+  // the render is drawn larger than the tint it sits on, not fitted inside
+  // it.
+  tileArt: {
+    height: 45,
+    marginTop: 6,
+    marginBottom: spacing.sm,
+    borderRadius: radii.xl,
+    backgroundColor: colors.bgSunken,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'visible',
+  },
+  tileArtSelected: { backgroundColor: colors.primarySoft },
+  // Fixed pixel size, not a percentage of the pill — a percentage shrinks
+  // in lockstep with the pill itself, which is what kept the render
+  // "fitting" no matter how small tileArt's own height got. A flat size
+  // held constant against a 45px-tall pill is what actually overflows it,
+  // the way the mockup's renders spill past their own rounded shape rather
+  // than sitting fitted inside it. Bottom-aligned to the pill (top is
+  // 45 - 76) so all of the overflow goes up, away from the label below —
+  // overflowing down was crowding into that text instead.
+  tileArtImage: {
+    position: 'absolute',
+    top: -31,
+    left: '50%',
+    marginLeft: -38,
+    width: 76,
+    height: 76,
+  },
+  // The "With points" pill floats over the art's top-left, per the Figma
+  // frame (top:-3, left:38 in the mockup's own coordinate space — scaled
+  // down here to this tile's much smaller art area, same corner). Geometry
+  // corrected to the frame's own numbers: 8px radius (a rounded rect, not
+  // a pill), 8px gap. Padding and text bumped up a step from the frame's
+  // literal 8/4 and micro size — those read too small once actually laid
+  // out at this scale, so this is a size up in the same proportions.
+  // Background is the same purple→navy gradient used on the reward icon,
+  // not the flat black the CSS export's top layer would literally paint —
+  // see the note on `rewardIconGradient` for why that layer is not what
+  // ends up on screen.
+  tilePointsPill: {
+    position: 'absolute',
+    top: -3,
+    left: 6,
+    zIndex: 3,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderRadius: radii.sm,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  tilePointsPillText: {
+    fontSize: font.sm,
+    fontWeight: weight.medium,
+    color: '#fff',
+  },
+  // No card edge to pin to any more, so the label block carries its own
+  // horizontal gutter instead of inheriting it from the tile.
+  tileFoot: { marginTop: 'auto', paddingHorizontal: 2 },
+  // Pinned to the art's own top edge now rather than the tile's — same
+  // corner-notch look, just anchored to the pill it actually sits on.
+  tileBadge: {
+    position: 'absolute',
+    top: -1,
+    left: spacing.md,
+    backgroundColor: colors.primary,
+    borderTopLeftRadius: 0,
+    borderTopRightRadius: 0,
+    borderBottomLeftRadius: radii.sm,
+    borderBottomRightRadius: radii.sm,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    zIndex: 2,
+  },
+  tileBadgeAccent: { backgroundColor: colors.accent, left: undefined, right: spacing.md },
+  tileBadgeText: {
+    fontSize: font.micro,
+    fontWeight: weight.heavy,
+    color: '#fff',
+    letterSpacing: tracking.caps,
+  },
+  tileName: { fontSize: font.sm, fontWeight: weight.bold, color: colors.text },
+  tilePrice: { fontSize: font.xs, color: colors.textSecondary, fontWeight: weight.semibold, marginTop: 1 },
+  tileMeta: { fontSize: font.micro, color: colors.textMuted, marginTop: 1 },
+
+  // ── Scan bar ──
+  // 46px tall with a 16px radius, per the Figma frame. `overflow: hidden`
+  // is what lets the cars bleed off the left edge and still be clipped to
+  // the rounded corner.
+  scanBar: {
+    height: 46,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderRadius: radii.lg,
+    paddingHorizontal: spacing.md,
+    overflow: 'hidden',
+    ...shadow.sm,
+  },
+  scanCars: {
+    position: 'absolute',
+    left: 0,
+    bottom: -2,
+    width: 96,
+    height: 44,
+  },
+  // The stripe patch, shifted left of centre per request — closer to the
+  // car icon's side of the bar rather than dead-centre.
+  scanStripes: {
+    position: 'absolute',
+    left: '32%',
+    marginLeft: -45,
+    top: 0,
+    bottom: 0,
+    width: 90,
+  },
+  scanText: {
+    // Centred in the bar rather than laid out in the row: the cars on the
+    // left would otherwise shove the label toward the QR tile. flex: 1 with
+    // a centred text keeps it on the bar's true midline, which is where the
+    // mockup has it.
+    flex: 1,
+    textAlign: 'center',
+    fontSize: font.lg,
+    fontWeight: weight.black,
+    color: '#fff',
+    letterSpacing: tracking.tight,
+  },
+  // Solid white in the design, not a translucent wash — it reads as a
+  // physical tile sitting on the bar.
+  scanQr: {
+    width: 34, height: 34, borderRadius: radii.sm,
+    backgroundColor: '#fff',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  manualBtn: { alignItems: 'center', paddingVertical: spacing.sm },
+  manualText: { fontSize: font.xs, color: colors.textMuted, fontWeight: weight.medium },
+
+  // ── Recent rows ──
+  recentRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    backgroundColor: colors.bgCard,
+    borderRadius: radii.md,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
+    ...shadow.xs,
+  },
+  recentIcon: {
+    width: 34, height: 34, borderRadius: radii.sm,
+    backgroundColor: colors.bgSunken,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  recentTitle: { fontSize: font.sm, fontWeight: weight.bold, color: colors.text },
+  recentSub: { fontSize: font.micro, color: colors.textMuted, marginTop: 2 },
+  recentAmount: { fontSize: font.sm, fontWeight: weight.heavy, color: colors.primary },
+
+  // ── Success toast ──
+  // Pinned near the bottom, over the page rather than in it, so dismissing
+  // it leaves the home screen exactly as it was.
+  toastWrap: {
+    position: 'absolute',
+    left: spacing.lg,
+    right: spacing.lg,
+    bottom: spacing.xl,
+    zIndex: 50,
+  },
+  toast: {
+    borderRadius: radii.lg,
+    padding: spacing.lg,
+    ...shadow.lg,
+  },
+  toastClose: { position: 'absolute', top: spacing.md, right: spacing.md, padding: 2 },
+  toastTitle: {
+    fontSize: font.regular,
+    fontWeight: weight.black,
+    color: '#fff',
+    letterSpacing: tracking.tight,
+    paddingRight: spacing.lg,
+  },
+  toastBody: {
+    fontSize: font.xs,
+    color: 'rgba(255,255,255,0.8)',
+    lineHeight: 17,
+    marginTop: 4,
+  },
+  toastPoints: { color: colors.accentLight, fontWeight: weight.heavy },
+  toastBtn: {
+    alignSelf: 'flex-start',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.45)',
+    borderRadius: radii.full,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: 7,
+    marginTop: spacing.md,
+  },
+  toastBtnText: { fontSize: font.xs, fontWeight: weight.bold, color: '#fff' },
+
+  // ── Promo ──
+  promo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    borderRadius: radii.xl,
+    padding: spacing.lg,
+    overflow: 'hidden',
+  },
+  promoRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  promoLine: {
+    fontSize: font.xl,
+    fontWeight: weight.black,
+    color: '#fff',
+    letterSpacing: tracking.tight,
+  },
+  promoCta: {
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    borderRadius: radii.full,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 6,
+    marginTop: spacing.md,
+  },
+  promoCtaText: { fontSize: font.xs, fontWeight: weight.bold, color: '#fff' },
+});

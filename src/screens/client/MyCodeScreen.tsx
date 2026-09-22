@@ -137,7 +137,7 @@ const styles = StyleSheet.create({
   bloom: {
     position: 'absolute', top: -90, right: -60,
     width: 210, height: 210, borderRadius: 105,
-    backgroundColor: 'rgba(233,30,99,0.20)',
+    backgroundColor: colors.bloomBrandSoft,
   },
   cardHead: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',

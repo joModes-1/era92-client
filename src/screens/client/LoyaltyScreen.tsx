@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useNavigation } from '@react-navigation/native';
 import { api } from '../../api';
 import { colors, radii, font, spacing, weight, tracking, shadow } from '../../theme';
 import { ReportScreen } from './reportHelpers';
@@ -8,6 +9,8 @@ import Icon from '../../components/Icon';
 import { Surface, EmptyState, ProgressBar, StampRow, MetricStrip } from '../../components/ui';
 
 export default function LoyaltyScreen() {
+  const navigation = useNavigation<any>();
+
   return (
     <ReportScreen
       title="Loyalty"
@@ -55,6 +58,23 @@ export default function LoyaltyScreen() {
               <View style={styles.cardStamps}>
                 <StampRowLight filled={done} total={required} />
               </View>
+
+              {/* A plain light pill rather than GradientButton — its own
+                  gradient would clash with the card's, which already carries
+                  the visual weight here. */}
+              {credits > 0 && (
+                <Surface
+                  elevation="none"
+                  borderless
+                  onPress={() => navigation.navigate('BranchScan', { useFreeWash: true })}
+                  style={styles.redeemBtn}
+                >
+                  <Icon name="gift" size={13} color={colors.primary} />
+                  <Text style={styles.redeemText}>
+                    {credits > 1 ? 'Redeem a free wash' : 'Redeem your free wash'}
+                  </Text>
+                </Surface>
+              )}
             </LinearGradient>
 
             {/* Progress */}
@@ -122,6 +142,14 @@ const styles = StyleSheet.create({
   cardValue: { fontSize: 56, fontWeight: weight.black, color: '#fff', letterSpacing: -2, marginTop: 2, lineHeight: 62 },
   cardSub: { fontSize: font.sm, color: 'rgba(255,255,255,0.85)', lineHeight: 19, maxWidth: '92%' },
   cardStamps: { marginTop: spacing.lg, paddingTop: spacing.lg, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: 'rgba(255,255,255,0.22)' },
+  redeemBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    marginTop: spacing.lg,
+  },
+  redeemText: { fontSize: font.sm, fontWeight: weight.bold, color: colors.primary },
 
   stamps: { flexDirection: 'row', gap: 7, flexWrap: 'wrap' },
   stamp: { width: 24, height: 24, borderRadius: radii.full, alignItems: 'center', justifyContent: 'center' },

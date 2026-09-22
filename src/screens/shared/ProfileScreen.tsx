@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../../api/AuthContext';
 import { api } from '../../api';
 import { colors, radii, font, spacing, weight, tracking } from '../../theme';
@@ -22,7 +21,6 @@ const ROLE_LABEL: Record<string, string> = {
 
 export default function ProfileScreen() {
   const { actor, refreshActor, logout } = useAuth();
-  const navigation = useNavigation<any>();
   const alert = useAppAlert();
   const insets = useSafeAreaInsets();
   const role = actor?.role || actor?.type || 'client';
@@ -31,6 +29,7 @@ export default function ProfileScreen() {
   const [email, setEmail] = useState(actor?.email || '');
   const [phone, setPhone] = useState(actor?.phone || '');
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const dirty = fullName.trim() !== (actor?.full_name || '')
     || email.trim() !== (actor?.email || '')
@@ -57,6 +56,37 @@ export default function ProfileScreen() {
   };
 
   const displayName = actor?.full_name || actor?.username || 'Account';
+
+  /**
+   * Apple (Guideline 5.1.1(v)) and Google Play both require an in-app way
+   * to delete an account for any app that lets people create one — a
+   * support email is not enough. Client-only: staff and platform accounts
+   * are provisioned by an org admin, not self-registered, so there is no
+   * equivalent "delete my own account" action for them.
+   */
+  const confirmDelete = () => {
+    alert(
+      'Delete your account?',
+      'This permanently removes your name, phone, and login details. Your wash and points history stays with the business for their records, but is no longer linked to you. This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete account',
+          style: 'destructive',
+          onPress: async () => {
+            setDeleting(true);
+            try {
+              await api.deleteClientAccount();
+              await logout();
+            } catch (e: any) {
+              alert('Could not delete account', e.message);
+              setDeleting(false);
+            }
+          },
+        },
+      ]
+    );
+  };
 
   return (
     <View style={styles.container}>
@@ -132,20 +162,23 @@ export default function ProfileScreen() {
           <SectionHeader title="Account" icon="cog" />
           <Surface elevation="sm" padded="sm">
             <ListRow
-              leading="lock"
-              leadingTone="info"
-              title="Change password"
-              subtitle="Update your sign-in credentials"
-              onPress={() => navigation.navigate('ChangePassword')}
-            />
-            <ListRow
               leading="sign-out-alt"
               leadingTone="error"
               title="Log out"
               subtitle="Sign out of this device"
               onPress={logout}
-              last
+              last={role !== 'client'}
             />
+            {role === 'client' ? (
+              <ListRow
+                leading="trash-alt"
+                leadingTone="error"
+                title="Delete account"
+                subtitle={deleting ? 'Deleting…' : 'Permanently remove your account'}
+                onPress={deleting ? undefined : confirmDelete}
+                last
+              />
+            ) : null}
           </Surface>
         </View>
       </ScrollView>

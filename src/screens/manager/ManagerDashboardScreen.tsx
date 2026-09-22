@@ -1,12 +1,14 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, RefreshControl } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
 import { api } from '../../api';
 import { useAuth } from '../../api/AuthContext';
 import { colors, radii, font, spacing, weight, tracking, shadow } from '../../theme';
 import Icon from '../../components/Icon';
-import ScreenHeader from '../../components/ScreenHeader';
+import AppTopBar, { TopBarPill } from '../../components/AppTopBar';
+import GradientText from '../../components/GradientText';
 import Badge from '../../components/Badge';
 import { Surface, SectionHeader, EmptyState, SkeletonList, ListRow, initials } from '../../components/ui';
 
@@ -71,10 +73,13 @@ export default function ManagerDashboardScreen() {
 
   if (!loaded) {
     return (
-      <View style={styles.container}>
-        <ScreenHeader title="Home" subtitle="Today" compact />
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <AppTopBar
+          context={actor?.branch_name || 'Your branch'}
+          onMenu={() => navigation.openDrawer?.()}
+        />
         <ScrollView contentContainerStyle={styles.body}><SkeletonList rows={4} /></ScrollView>
-      </View>
+      </SafeAreaView>
     );
   }
 
@@ -90,11 +95,20 @@ export default function ManagerDashboardScreen() {
   const owed = pendingCash.reduce((sum: number, s: any) => sum + Number(s.live_expected_cash_ugx || 0), 0);
 
   return (
-    <View style={styles.container}>
-      <ScreenHeader
-        title={`${greeting()}, ${actor?.full_name?.split(' ')[0] || 'manager'}`}
-        subtitle={actor?.branch_name || 'Your branch'}
-        compact
+    <SafeAreaView style={styles.container} edges={['top']}>
+      <AppTopBar
+        context={actor?.branch_name || 'Your branch'}
+        right={
+          exceptions.length > 0 ? (
+            <TopBarPill
+              icon="exclamation"
+              label={String(exceptions.length)}
+              tone="error"
+              onPress={() => navigation.navigate('Exceptions')}
+            />
+          ) : undefined
+        }
+        onMenu={() => navigation.openDrawer?.()}
       />
 
       <ScrollView
@@ -103,22 +117,34 @@ export default function ManagerDashboardScreen() {
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} />}
       >
-        {/* Hero — the branch's headline number, given real weight instead of
-            sitting flat in a header pill. */}
+        <Text style={styles.greeting}>
+          {greeting()}, {actor?.full_name?.split(' ')[0] || 'manager'}
+        </Text>
+
+        {/* Hero — the branch's headline number on the navy→violet sweep the
+            app's primary surfaces share. The amount itself is picked out in
+            the warm magenta→orange the rewards figures use, so the number
+            reads as the subject rather than as more of the same purple. */}
         <LinearGradient
-          colors={[colors.pink[600], colors.primary, colors.accent]}
-          locations={[0, 0.55, 1]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
+          colors={colors.gradientAction}
+          locations={colors.gradientActionLocations}
+          start={colors.gradientActionStart}
+          end={colors.gradientActionEnd}
           style={styles.hero}
         >
           <View style={styles.heroBloom} pointerEvents="none" />
           <Text style={styles.heroLabel}>TODAY'S GROSS</Text>
           <View style={styles.heroAmountRow}>
             <Text style={styles.heroCurrency}>UGX</Text>
-            <Text style={styles.heroAmount} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.5}>
-              {ugx(gross)}
-            </Text>
+            <GradientText
+              text={ugx(gross)}
+              style={styles.heroAmount}
+              colorsArr={colors.pointsBadge}
+              locations={colors.pointsBadgeLocations}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              numberOfLines={1}
+            />
           </View>
           <View style={styles.heroDivider} />
           <View style={styles.heroStats}>
@@ -198,10 +224,14 @@ export default function ManagerDashboardScreen() {
             <View style={styles.workerRow}>
               {working.map((s: any) => (
                 <View key={s.id} style={styles.workerChip}>
+                  {/* The star roundel's purple→navy, not the hero's own
+                      sweep — reusing one gradient for both the page's
+                      biggest surface and its smallest made the whole
+                      screen read as a single flat purple. */}
                   <LinearGradient
-                    colors={colors.gradient}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
+                    colors={colors.rewardIconGradient}
+                    start={colors.rewardIconGradientStart}
+                    end={colors.rewardIconGradientEnd}
                     style={styles.workerAvatar}
                   >
                     <Text style={styles.workerAvatarText}>{initials(s.worker_name)}</Text>
@@ -258,14 +288,26 @@ export default function ManagerDashboardScreen() {
           )}
         </View>
       </ScrollView>
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.bg },
+  // White, matching the top bar above it, so the bar reads as part of the
+  // page rather than a separate band the way the old gradient header did.
+  container: { flex: 1, backgroundColor: colors.bgCard },
   scroll: { flex: 1 },
   body: { padding: spacing.lg, paddingBottom: spacing.xxxl, gap: spacing.lg },
+
+  // The greeting moved out of the header and into the page, where it can
+  // be a real headline instead of a line of chrome.
+  greeting: {
+    fontSize: font.xxl,
+    fontWeight: weight.black,
+    color: colors.text,
+    letterSpacing: tracking.tight,
+    marginBottom: -spacing.xs,
+  },
 
   hero: {
     borderRadius: radii.xl,
@@ -298,13 +340,14 @@ const styles = StyleSheet.create({
   alertSub: { fontSize: font.xs, color: colors.textSecondary, marginTop: 1 },
 
   workerRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  // Tinted fill rather than a bordered white card — the page is white now,
+  // so a white chip on it needed the border to exist at all. The new
+  // language leans on a sunken tint for this instead of a hairline.
   workerChip: {
     alignItems: 'center', gap: 4,
-    backgroundColor: colors.bgCard, borderRadius: radii.lg,
+    backgroundColor: colors.bgSunken, borderRadius: radii.lg,
     paddingVertical: spacing.md, paddingHorizontal: spacing.md,
     minWidth: 84,
-    borderWidth: StyleSheet.hairlineWidth, borderColor: colors.borderLight,
-    ...shadow.xs,
   },
   workerAvatar: {
     width: 40, height: 40, borderRadius: radii.full,
@@ -314,7 +357,9 @@ const styles = StyleSheet.create({
   workerLiveDot: {
     position: 'absolute', top: spacing.md, right: spacing.md,
     width: 8, height: 8, borderRadius: 4, backgroundColor: colors.success,
-    borderWidth: 1.5, borderColor: colors.bgCard,
+    // Ringed in the chip's own fill so the dot reads as sitting on the
+    // chip rather than floating over the avatar behind it.
+    borderWidth: 1.5, borderColor: colors.bgSunken,
   },
   workerName: { fontSize: font.xs, fontWeight: weight.bold, color: colors.text, marginTop: 2 },
   workerHolding: { fontSize: 10, fontWeight: weight.semibold, color: colors.textMuted },

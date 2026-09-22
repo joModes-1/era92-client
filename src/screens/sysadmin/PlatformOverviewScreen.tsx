@@ -375,7 +375,7 @@ const styles = StyleSheet.create({
   bloom: {
     position: 'absolute', top: -80, right: -50,
     width: 200, height: 200, borderRadius: 100,
-    backgroundColor: 'rgba(233,30,99,0.18)',
+    backgroundColor: colors.bloomBrandSoft,
   },
   heroHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.sm },
   heroKicker: { fontSize: font.micro, fontWeight: weight.heavy, color: 'rgba(255,255,255,0.55)', letterSpacing: tracking.capsWide },

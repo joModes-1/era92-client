@@ -5,7 +5,7 @@ import { colors, radii, font, spacing, weight, shadow, tracking } from '../theme
 import Icon from './Icon';
 
 type Variant = 'primary' | 'secondary' | 'danger' | 'ghost' | 'success' | 'dark';
-type Size = 'sm' | 'md' | 'lg';
+type Size = 'sm' | 'md' | 'lg' | 'action';
 
 type Props = {
   title: string;
@@ -20,10 +20,14 @@ type Props = {
   full?: boolean;
 };
 
-const SIZES: Record<Size, { h: number; px: number; fs: number; icon: number }> = {
+const SIZES: Record<Size, { h: number; px: number; fs: number; icon: number; r?: number }> = {
   sm: { h: 38, px: 16, fs: font.sm, icon: 12 },
   md: { h: 50, px: 22, fs: font.regular, icon: 14 },
   lg: { h: 56, px: 26, fs: font.lg, icon: 16 },
+  // The design's primary action: 48px tall, 20px side padding, 12px
+  // radius — measured off the Figma frame (327 Fill × 48). Its own size
+  // rather than a change to `lg`, which 20-odd other screens rely on.
+  action: { h: 48, px: 20, fs: font.lg, icon: 16, r: radii.md },
 };
 
 function Content({ icon, iconRight, iconColor, textStyle, title, iconSize }: any) {
@@ -41,10 +45,14 @@ export default function GradientButton({
 }: Props) {
   const s = SIZES[size];
   const isOff = disabled || loading;
+  const isAction = size === 'action';
   const base: ViewStyle = {
     minHeight: s.h,
     paddingHorizontal: s.px,
-    borderRadius: radii.md,
+    // 16px by default, matching the input fields in the same flow — in the
+    // design the button and the field it sits under share one corner
+    // radius. A size can override it (the action button is 12px).
+    borderRadius: s.r ?? radii.lg,
     alignItems: 'center',
     justifyContent: 'center',
     alignSelf: full ? 'stretch' : undefined,
@@ -112,10 +120,14 @@ export default function GradientButton({
       activeOpacity={0.88}
       style={[full && { alignSelf: 'stretch' }, !isOff && shadow.brand, isOff && styles.off, style]}
     >
+      {/* The `action` size carries the design's own navy→violet sweep at
+          its specified angle and stops; every other size keeps the
+          long-standing brand gradient. */}
       <LinearGradient
-        colors={colors.gradient}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
+        colors={isAction ? colors.gradientAction : colors.gradient}
+        locations={isAction ? colors.gradientActionLocations : undefined}
+        start={isAction ? colors.gradientActionStart : { x: 0, y: 0 }}
+        end={isAction ? colors.gradientActionEnd : { x: 1, y: 1 }}
         style={base}
       >
         {loading

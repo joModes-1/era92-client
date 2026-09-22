@@ -28,6 +28,7 @@ export default function Icon({
   size = 18,
   color = colors.text,
   solid = true,
-}: { name: string; size?: number; color?: string; solid?: boolean }) {
-  return <FontAwesome5 name={safeName(name) as any} size={size} color={color} solid={solid} />;
+  style,
+}: { name: string; size?: number; color?: string; solid?: boolean; style?: any }) {
+  return <FontAwesome5 name={safeName(name) as any} size={size} color={color} solid={solid} style={style} />;
 }

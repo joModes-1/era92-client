@@ -208,41 +208,29 @@ async function req(method: string, path: string, body?: any): Promise<any> {
 }
 
 export const api = {
-  // Auth
-  loginStaff: (username: string, password: string) =>
-    req('POST', '/auth/staff/login', { username, password }),
+  // Auth — phone + one-time code, the only sign-in the app offers. The
+  // password routes still exist on the server for any out-of-band use, but
+  // nothing in the app calls them any more.
+  //
+  // One flow for every role: a number that already belongs to a staff
+  // account or an existing client logs that person straight in; only a
+  // genuinely new number ever reaches the "your name" step.
+  phoneStart: (phone: string) =>
+    req('POST', '/auth/phone/start', { phone }),
 
-  // Platform admins sign in with a username like every other role. The backend
-  // matches on username OR email, so either identifier works here.
-  loginPlatform: (username: string, password: string) =>
-    req('POST', '/auth/platform/login', { username, password }),
+  phoneVerify: (phone: string, code: string, full_name?: string) =>
+    req('POST', '/auth/phone/verify', { phone, code, full_name }),
 
-  loginClient: (username: string, password: string) =>
-    req('POST', '/auth/client/login', { username, password }),
-
-  registerClient: (full_name: string, username: string, email: string, password: string) =>
-    req('POST', '/auth/client/register', { full_name, username, email, password }),
-
-  verifyClientEmail: (email: string, code: string) =>
-    req('POST', '/auth/client/verify-email', { email, code }),
-
-  requestClientPasswordReset: (email: string) =>
-    req('POST', '/auth/client/request-password-reset', { email }),
-
-  resetClientPassword: (email: string, code: string, new_password: string) =>
-    req('POST', '/auth/client/reset-password', { email, code, new_password }),
-
-  changePassword: (current: string, pwd: string) =>
-    req('POST', '/auth/staff/change-password', { current_password: current, new_password: pwd }),
-
-  changePasswordPlatform: (current: string, pwd: string) =>
-    req('POST', '/auth/platform/change-password', { current_password: current, new_password: pwd }),
-
-  changePasswordClient: (current: string, pwd: string) =>
-    req('POST', '/auth/client/change-password', { current_password: current, new_password: pwd }),
+  deleteClientAccount: () =>
+    req('POST', '/auth/client/delete-account', {}),
 
   registerDevice: (push_token: string, platform: 'ios' | 'android') =>
     req('POST', '/me/device', { push_token, platform }),
+
+  // Worker points — the staff incentive scheme.
+  myPoints: () => req('GET', '/worker-points/me'),
+  pointsLeaderboard: (branchId?: string) =>
+    req('GET', `/worker-points/leaderboard${branchId ? `?branch_id=${branchId}` : ''}`),
 
   // Unified logout endpoint — works for staff/platform/client alike since it
   // revokes whichever refresh token is passed in, keyed off the JWT payload
@@ -255,9 +243,10 @@ export const api = {
 
   // Staff
   listStaff: () => req('GET', '/staff'),
-  createStaff: (data: { full_name: string; username: string; email?: string; phone?: string; role: 'orgadmin' | 'manager' | 'worker'; branch_id?: string }) =>
+  // `phone` is required: staff sign in with it plus a one-time code, so an
+  // account created without one could never be signed into.
+  createStaff: (data: { full_name: string; username: string; email?: string; phone: string; role: 'orgadmin' | 'manager' | 'worker'; branch_id?: string }) =>
     req('POST', '/staff', data),
-  resetStaffPassword: (id: string) => req('POST', `/staff/${id}/reset-password`, {}),
   suspendStaff: (id: string) => req('POST', `/staff/${id}/suspend`),
   activateStaff: (id: string) => req('POST', `/staff/${id}/activate`),
 
@@ -359,6 +348,10 @@ export const api = {
   // Washes
   startWash: (data: any) => req('POST', '/washes', data),
   getQueue: () => req('GET', '/washes/queue'),
+  // Claims a client's self-service booking — the counterpart to a worker
+  // scanning a customer's QR in the old flow. Requires an open shift and no
+  // wash already in progress; races against other workers safely.
+  acceptWash: (id: string) => req('POST', `/washes/${id}/accept`),
   washDone: (id: string) => req('POST', `/washes/${id}/wash-done`),
   settle: (id: string, data: any) => req('POST', `/washes/${id}/settle`, data),
   settleByToken: (data: any) => req('POST', '/washes/settle-by-token', data),
@@ -377,9 +370,13 @@ export const api = {
   listWashes: (params?: string) => req('GET', `/washes${params ? '?' + params : ''}`),
   getMyToday: () => req('GET', '/washes/mine/today'),
 
-  // Tokens
-  startToken: () => req('POST', '/me/washes/start-token'),
-  payToken: (washId: string) => req('POST', `/me/washes/${washId}/pay-token`),
+  // Note: the client-side minting calls that used to live here
+  // (startToken/payToken — a client generating a QR for a worker to scan)
+  // were removed along with StartWashQRScreen and PayWashQRScreen. Booking
+  // now happens through clientBookWash below, with no QR shown by the
+  // client at all. The worker still SENDS a scanned start_token value
+  // through attachClient/startWash for their own walk-in flow — that server
+  // route and this consumption path are unrelated and untouched.
 
   // Reports
   daily: (date: string, branch?: string) => req('GET', `/reports/daily?date=${date}${branch ? '&branch_id=' + branch : ''}`),
@@ -497,7 +494,38 @@ export const api = {
   clientLoyalty: () => req('GET', '/me/washes/loyalty'),
   clientHistory: () => req('GET', '/me/washes/history'),
   clientActive: () => req('GET', '/me/washes/active'),
+  // Price list for the client's home screen — view-only, no branch_id on a
+  // client's own token, so the server picks one (see the route comment).
+  clientPrices: () => req('GET', '/me/washes/prices'),
+  // Prices for a SPECIFIC branch — once a client has scanned that branch's
+  // QR and is booking there, unlike clientPrices()'s home-screen preview
+  // which lets the server pick one.
+  clientPricesForBranch: (branchId: string) => req('GET', `/me/washes/prices?branch_id=${branchId}`),
   clientLedger: () => req('GET', '/me/washes/loyalty/ledger'),
   clientQR: () => req('GET', '/me/washes/qr'),
+
+  // Client self-service booking
+  //
+  // Resolves a branch's static wall QR (or its short code typed manually).
+  // The QR encodes both org_id and code, since code is only unique per-org.
+  resolveBranchCode: (code: string, orgId: string) =>
+    req('GET', `/me/branches/resolve?code=${encodeURIComponent(code)}&org_id=${encodeURIComponent(orgId)}`),
+  // Creates a wash in 'requested' status with no worker attached yet — the
+  // client's own booking action, distinct from the worker's startWash().
+  clientBookWash: (data: {
+    branch_id: string;
+    vehicle_class_id: string;
+    service_id?: string;
+    plate?: string;
+    vehicle_color?: string;
+    use_free_wash?: boolean;
+    declared_payment_method?: 'cash' | 'mtn' | 'airtel';
+    declared_payment_phone?: string;
+  }) => req('POST', '/me/washes', data),
+  // Declares how the client intends to pay. Does NOT settle the wash and
+  // does NOT charge anything — see PaymentMethodScreen.tsx for why.
+  declarePaymentIntent: (washId: string, data: { method: 'cash' | 'mtn' | 'airtel'; phone?: string }) =>
+    req('POST', `/me/washes/${washId}/payment-intent`, data),
+  cancelBookingRequest: (washId: string) => req('POST', `/me/washes/${washId}/cancel-request`),
   lookupClient: (code: string) => req('GET', `/clients/lookup?member_code=${code}`),
 };

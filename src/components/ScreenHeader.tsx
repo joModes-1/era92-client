@@ -31,7 +31,7 @@ export default function ScreenHeader({
 
   return (
     <LinearGradient
-      colors={[colors.pink[600], colors.primary, colors.accent]}
+      colors={[...colors.gradientBrandDeep, colors.primary]}
       locations={[0, 0.52, 1]}
       start={{ x: 0, y: 0 }}
       end={{ x: 1, y: 1 }}

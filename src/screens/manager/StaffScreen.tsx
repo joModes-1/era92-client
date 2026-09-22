@@ -1,10 +1,14 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../../api/AuthContext';
 import { api } from '../../api';
 import { colors, radii, font, spacing, weight, tracking, Tone } from '../../theme';
 import Badge from '../../components/Badge';
-import ScreenHeader, { HeaderAction } from '../../components/ScreenHeader';
+import AppTopBar from '../../components/AppTopBar';
+import GradientButton from '../../components/GradientButton';
 import Icon from '../../components/Icon';
 import { useAppAlert } from '../../components/AppAlert';
 import {
@@ -17,8 +21,17 @@ type Role = 'orgadmin' | 'manager' | 'worker';
 const ROLE_LABEL: Record<Role, string> = { orgadmin: 'Org Admin', manager: 'Manager', worker: 'Worker' };
 const ROLE_TONE: Record<string, Tone> = { orgadmin: 'primary', manager: 'info', worker: 'neutral' };
 
+/** +256706965418 → 070 696 5418, matching how the server reads it back. */
+function displayPhone(e164: string): string {
+  const m = /^\+256(\d{9})$/.exec(e164 || '');
+  if (!m) return e164 || '';
+  const n = m[1];
+  return `0${n.slice(0, 2)} ${n.slice(2, 5)} ${n.slice(5)}`;
+}
+
 export default function StaffScreen() {
   const { actor } = useAuth();
+  const navigation = useNavigation<any>();
   const alert = useAppAlert();
   const isOrgAdmin = actor?.role === 'orgadmin';
   // Backend rule (staffRoutes.ts): orgadmin may create orgadmin/manager/worker;
@@ -76,6 +89,13 @@ export default function StaffScreen() {
       alert('Missing details', 'Full name and username are required.');
       return;
     }
+    // Phone is the sign-in identity now — an account without one cannot be
+    // signed into at all, so it is checked here rather than left to the
+    // server to reject after the form has been filled in.
+    if (phone.replace(/\D/g, '').length < 9) {
+      alert('Missing phone', 'A phone number is required — it is how they sign in.');
+      return;
+    }
     if (role !== 'orgadmin' && !branchId) {
       alert('Missing branch', 'Choose a branch for this role.');
       return;
@@ -86,7 +106,7 @@ export default function StaffScreen() {
         full_name: fullName.trim(),
         username: username.trim(),
         email: email.trim() || undefined,
-        phone: phone.trim() || undefined,
+        phone: phone.trim(),
         role,
         branch_id: role === 'orgadmin' ? undefined : branchId,
       });
@@ -94,32 +114,12 @@ export default function StaffScreen() {
       await load();
       alert(
         'Staff created',
-        `${fullName} can sign in with username "${username.trim()}" and temporary password:\n\n${result.temp_password}\n\nThis password is shown only once — share it securely.`
+        `${fullName} signs in with ${result.phone_display} — they enter that number and the code texted to it. No password to share.`
       );
     } catch (e: any) {
       alert('Error', e.message);
     }
     setCreating(false);
-  };
-
-  const doResetPassword = (member: any) => {
-    alert('Reset password', `Reset ${member.full_name}'s password?`, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Reset',
-        style: 'destructive',
-        onPress: async () => {
-          setBusyId(member.id);
-          try {
-            const result = await api.resetStaffPassword(member.id);
-            alert('Password reset', `New temporary password for ${member.full_name}:\n\n${result.temp_password}\n\nShare this securely — it will not be shown again.`);
-          } catch (e: any) {
-            alert('Error', e.message);
-          }
-          setBusyId(null);
-        },
-      },
-    ]);
   };
 
   const toggleStatus = (member: any) => {
@@ -150,10 +150,10 @@ export default function StaffScreen() {
 
   if (!loaded) {
     return (
-      <View style={styles.container}>
-        <ScreenHeader title="Staff" />
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <AppTopBar context="Staff" onMenu={() => navigation.openDrawer?.()} />
         <ScrollView contentContainerStyle={styles.body}><SkeletonList rows={5} showHeader={false} /></ScrollView>
-      </View>
+      </SafeAreaView>
     );
   }
 
@@ -168,12 +168,8 @@ export default function StaffScreen() {
   const activeCount = staff.filter((s: any) => s.status === 'active').length;
 
   return (
-    <View style={styles.container}>
-      <ScreenHeader
-        title="Staff"
-        subtitle={`${activeCount} active of ${staff.length}`}
-        action={<HeaderAction icon="plus" onPress={openCreate} />}
-      />
+    <SafeAreaView style={styles.container} edges={['top']}>
+      <AppTopBar context="Staff" onMenu={() => navigation.openDrawer?.()} />
 
       <ScrollView
         style={styles.scroll}
@@ -181,6 +177,22 @@ export default function StaffScreen() {
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} />}
       >
+        {/* The page's own title and primary action, rather than a header
+            band with an icon-only button — matching how the new screens
+            lead with a real headline and a full-width CTA. */}
+        <View>
+          <Text style={styles.title}>Your team</Text>
+          <Text style={styles.subtitle}>{activeCount} active of {staff.length}</Text>
+        </View>
+
+        <GradientButton
+          title="Add staff member"
+          onPress={openCreate}
+          icon="plus"
+          size="action"
+          full
+        />
+
         {staff.length === 0 ? (
           <Surface elevation="sm" padded="lg">
             <EmptyState icon="users" title="No staff yet" message="Add your first team member to get started." />
@@ -194,18 +206,44 @@ export default function StaffScreen() {
                   const isActive = s.status === 'active';
                   const busy = busyId === s.id;
                   return (
-                    <Surface key={s.id} elevation="sm" style={[styles.card, !isActive && styles.cardOff]}>
+                    <Surface
+                      key={s.id}
+                      elevation="none"
+                      borderless
+                      tone={colors.bgSunken}
+                      style={[styles.card, !isActive && styles.cardOff]}
+                    >
                       <View style={styles.head}>
-                        <View style={[styles.avatar, !isActive && styles.avatarOff]}>
-                          <Text style={[styles.avatarText, !isActive && styles.avatarTextOff]}>
-                            {initials(s.full_name)}
-                          </Text>
-                        </View>
+                        {/* Active staff get the brand roundel; suspended
+                            ones fall back to a flat grey so the colour
+                            itself signals who is currently working. */}
+                        {isActive ? (
+                          <LinearGradient
+                            colors={colors.rewardIconGradient}
+                            start={colors.rewardIconGradientStart}
+                            end={colors.rewardIconGradientEnd}
+                            style={styles.avatar}
+                          >
+                            <Text style={styles.avatarText}>{initials(s.full_name)}</Text>
+                          </LinearGradient>
+                        ) : (
+                          <View style={[styles.avatar, styles.avatarOff]}>
+                            <Text style={[styles.avatarText, styles.avatarTextOff]}>
+                              {initials(s.full_name)}
+                            </Text>
+                          </View>
+                        )}
 
                         <View style={styles.who}>
                           <Text style={styles.name} numberOfLines={1}>{s.full_name}</Text>
+                          {/* Phone leads: it is how they sign in. A missing
+                              one is called out rather than left blank,
+                              because that account cannot be signed into. */}
                           <Text style={styles.meta} numberOfLines={1}>
-                            @{s.username}{s.branch_name ? ` · ${s.branch_name}` : ''}
+                            {s.phone
+                              ? displayPhone(s.phone)
+                              : 'No phone — cannot sign in'}
+                            {s.branch_name ? ` · ${s.branch_name}` : ''}
                           </Text>
                         </View>
 
@@ -218,18 +256,6 @@ export default function StaffScreen() {
                       </View>
 
                       <View style={styles.actions}>
-                        <TouchableOpacity
-                          style={styles.actionBtn}
-                          disabled={busy}
-                          onPress={() => doResetPassword(s)}
-                          activeOpacity={0.6}
-                        >
-                          <Icon name="key" size={11} color={colors.textSecondary} />
-                          <Text style={styles.actionText}>Reset password</Text>
-                        </TouchableOpacity>
-
-                        <View style={styles.actionDivider} />
-
                         <TouchableOpacity
                           style={styles.actionBtn}
                           disabled={busy}
@@ -259,12 +285,21 @@ export default function StaffScreen() {
         visible={createVisible}
         onClose={() => setCreateVisible(false)}
         title="New staff member"
-        subtitle="They receive a one-time temporary password"
+        subtitle="They sign in with their phone and a one-time code"
         submitLabel="Create staff"
         onSubmit={submitCreate}
         submitting={creating}
       >
         <Field label="Full name" required value={fullName} onChangeText={setFullName} placeholder="e.g. Sarah N." />
+        <Field
+          label="Phone"
+          required
+          value={phone}
+          onChangeText={setPhone}
+          placeholder="0700 000 000"
+          keyboardType="phone-pad"
+          hint="How they sign in — a code is texted to this number."
+        />
         <Field
           label="Username"
           required
@@ -273,10 +308,17 @@ export default function StaffScreen() {
           placeholder="e.g. sarah"
           autoCapitalize="none"
           autoCorrect={false}
-          hint="Used to sign in."
+          hint="Their handle in reports and activity."
         />
-        <Field label="Email" value={email} onChangeText={setEmail} placeholder="sarah@example.com" autoCapitalize="none" keyboardType="email-address" />
-        <Field label="Phone" value={phone} onChangeText={setPhone} placeholder="+256700000000" keyboardType="phone-pad" />
+        <Field
+          label="Email"
+          value={email}
+          onChangeText={setEmail}
+          placeholder="sarah@example.com"
+          autoCapitalize="none"
+          keyboardType="email-address"
+          hint="Optional — for contact only, nothing is sent to it."
+        />
 
         {assignableRoles.length > 1 && (
           <PillPicker
@@ -306,14 +348,22 @@ export default function StaffScreen() {
           )
         )}
       </FormSheet>
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.bg },
+  container: { flex: 1, backgroundColor: colors.bgCard },
   scroll: { flex: 1 },
   body: { padding: spacing.lg, paddingBottom: spacing.xxxl, gap: spacing.lg },
+
+  title: {
+    fontSize: font.xxl,
+    fontWeight: weight.black,
+    color: colors.text,
+    letterSpacing: tracking.tight,
+  },
+  subtitle: { fontSize: font.sm, color: colors.textMuted, marginTop: 2 },
 
   card: { gap: spacing.md },
   cardOff: { opacity: 0.72 },
@@ -324,7 +374,9 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   avatarOff: { backgroundColor: colors.bgSunken },
-  avatarText: { fontSize: font.sm, fontWeight: weight.heavy, color: colors.primary },
+  // White on the gradient roundel; the suspended variant overrides both
+  // the fill and this back to muted grey.
+  avatarText: { fontSize: font.sm, fontWeight: weight.heavy, color: '#fff' },
   avatarTextOff: { color: colors.textMuted },
   who: { flex: 1, gap: 2 },
   name: { fontSize: font.regular, fontWeight: weight.heavy, color: colors.text, letterSpacing: tracking.tight },
