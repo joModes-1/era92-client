@@ -10,7 +10,7 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://mobile-backend-kwda.onrender.com/api/v1"
+        "EXPO_PUBLIC_API_URL": "https://carwashapi.villacode.site/api/v1"
       },
       "channel": "preview"
     },
@@ -20,7 +20,7 @@
         "buildType": "app-bundle"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://mobile-backend-kwda.onrender.com/api/v1"
+        "EXPO_PUBLIC_API_URL": "https://carwashapi.villacode.site/api/v1"
       },
       "channel": "production"
     },
@@ -32,7 +32,7 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://mobile-backend-kwda.onrender.com/api/v1"
+        "EXPO_PUBLIC_API_URL": "https://carwashapi.villacode.site/api/v1"
       }
     }
   },
