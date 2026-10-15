@@ -7,20 +7,20 @@
 export function artFor(name: string): { image?: any; icon: string; flip?: boolean; offsetY?: number; sizeDelta?: number } {
   const n = name.toLowerCase();
   if (n.includes('bike') || n.includes('motor')) {
-    return { image: require('../../../assets/bike.svg'), icon: 'motorcycle' };
+    return { image: require('../../../assets/bike.png'), icon: 'motorcycle' };
   }
   if (n.includes('interior') || n.includes('valet')) {
     // Sits a bit lower than the shared tile-art position — this render's
     // own framing leaves more empty space above the subject than the
     // other services' renders do, so the shared offset left it looking
     // high/floaty next to the rest of the grid.
-    return { image: require('../../../assets/2-car-seats.svg'), icon: 'chair', offsetY: 10 };
+    return { image: require('../../../assets/car-seats.png'), icon: 'chair', offsetY: 10 };
   }
   if (n.includes('heavy') || n.includes('truck') || n.includes('pickup')) {
-    return { image: require('../../../assets/heavy-vehical.svg'), icon: 'truck-pickup', sizeDelta: 3, offsetY: 10 };
+    return { image: require('../../../assets/heavy-vehicle.png'), icon: 'truck-pickup', sizeDelta: 3, offsetY: 10 };
   }
   if (n.includes('full')) {
-    return { image: require('../../../assets/2-car-seats.svg'), icon: 'car-side' };
+    return { image: require('../../../assets/car-seats.png'), icon: 'car-side' };
   }
   // Engine wash reuses the same car render as Full car wash — flipped so
   // the two don't look identical side by side on the tile grid, and so it

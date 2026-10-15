@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { colors, radii, font, spacing, weight } from '../theme';
 import Icon from './Icon';
-import Wordmark from './Wordmark';
+import CarWashLogo from './CarWashLogo';
 
 /**
  * The app's top chrome, shared by every role's home screen.
@@ -35,7 +35,7 @@ export default function AppTopBar({
   return (
     <View style={s.bar}>
       <View style={{ flex: 1 }}>
-        <Wordmark height={16} />
+        <CarWashLogo height={16} />
         {context ? (
           <ContextWrap
             style={s.contextRow}

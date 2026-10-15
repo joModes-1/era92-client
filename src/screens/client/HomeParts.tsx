@@ -3,10 +3,11 @@ import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { colors, radii, font, spacing, weight, tracking, shadow } from '../../theme';
 import Icon from '../../components/Icon';
-import Wordmark from '../../components/Wordmark';
+import CarWashLogo from '../../components/CarWashLogo';
 import GradientText from '../../components/GradientText';
 import GradientIcon from '../../components/GradientIcon';
 import ScanBarStripes from '../../components/ScanBarStripes';
+import CssGradient from '../../components/CssGradient';
 import O1Badge from '../../components/O1Badge';
 import { artFor } from './serviceArt';
 
@@ -40,7 +41,7 @@ export function HomeTopBar({
       <View style={{ flex: 1 }}>
         {/* Untinted for the same reason as the welcome screen — white bar,
             and the text build's default ink is already correct. */}
-        <Wordmark height={16} />
+        <CarWashLogo height={16} />
         <TouchableOpacity
           onPress={onBranch}
           disabled={!onBranch}
@@ -335,11 +336,10 @@ export function ScanBar({ onPress, onManual }: { onPress: () => void; onManual: 
   return (
     <View>
       <TouchableOpacity onPress={onPress} activeOpacity={0.9}>
-        <LinearGradient
+        <CssGradient
           colors={colors.gradientScan}
           locations={colors.gradientScanLocations}
-          start={colors.gradientScanStart}
-          end={colors.gradientScanEnd}
+          angle={colors.gradientScanAngle}
           style={s.scanBar}
         >
           {/* Stripes first so the cars paint over their left edge. */}
@@ -358,7 +358,7 @@ export function ScanBar({ onPress, onManual }: { onPress: () => void; onManual: 
           <View style={s.scanQr}>
             <Icon name="qrcode" size={19} color={colors.ink[900]} />
           </View>
-        </LinearGradient>
+        </CssGradient>
       </TouchableOpacity>
       <TouchableOpacity onPress={onManual} activeOpacity={0.6} style={s.manualBtn}>
         <Text style={s.manualText}>Scan to enter car details</Text>

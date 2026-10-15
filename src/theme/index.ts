@@ -130,9 +130,10 @@ export const colors = {
   // stops.
   gradientScan: ['#AC00FF', '#FF721D'] as const,
   gradientScanLocations: [0.039, 0.771] as const,
-  // Its own direction, so retuning the action button never moves this bar.
-  gradientScanStart: { x: 0.97, y: 0.97 },
-  gradientScanEnd: { x: 0.974, y: 0.84 },
+  // CSS angle for the bar (purple bottom-left to orange top-right), rendered
+  // via CssGradient so web and phone paint it the same. 13deg is what the
+  // web build already showed with the old raw points on a ~343x46 bar.
+  gradientScanAngle: 13,
 
   // ── The rewards banner ──
   // A pale violet wash, left to right, behind the "Points by wash" strip.

@@ -65,7 +65,7 @@ export default function PaymentPromptSheet({
 
           {step === 'prompt' ? (
             <View style={s.center}>
-              <Image source={require('../../../assets/sheild-dynamic-color.svg')} style={s.shield} resizeMode="contain" />
+              <Image source={require('../../../assets/shield.png')} style={s.shield} resizeMode="contain" />
               <Text style={s.amountTitle}>Pay UGX {amount}</Text>
               <Text style={s.sub}>Select payment method to proceed{'\n'}with payment of your service</Text>
               <ComponentButton1 title="Make a payment" onPress={() => setStep('method')} />
