@@ -11,9 +11,9 @@ import O1Badge from '../../components/O1Badge';
 import { artFor } from './serviceArt';
 
 /**
- * The pieces that make up the worker home, kept out of WorkerHome.tsx so
- * that file stays about behaviour — shifts, scanning, handovers — rather
- * than growing another few hundred lines of layout.
+ * The pieces that make up the client's home screen, kept out of
+ * ClientHome.tsx so that file stays about behaviour rather than growing
+ * another few hundred lines of layout.
  */
 
 /**
@@ -25,12 +25,15 @@ import { artFor } from './serviceArt';
  * rather than shown as a dead or zeroed pill.
  */
 export function HomeTopBar({
-  branch, points, onPoints, onMenu,
+  branch, points, onPoints, onMenu, onBranch,
 }: {
   branch: string;
   points?: number;
   onPoints?: () => void;
   onMenu: () => void;
+  /** Present = the branch row is tappable and opens the nearby-branch
+   *  picker. Omitted (worker screens) = inert text, exactly as before. */
+  onBranch?: () => void;
 }) {
   return (
     <View style={s.topBar}>
@@ -38,10 +41,15 @@ export function HomeTopBar({
         {/* Untinted for the same reason as the welcome screen — white bar,
             and the text build's default ink is already correct. */}
         <Wordmark height={16} />
-        <View style={s.branchRow}>
+        <TouchableOpacity
+          onPress={onBranch}
+          disabled={!onBranch}
+          activeOpacity={0.6}
+          style={s.branchRow}
+        >
           <Text style={s.branch} numberOfLines={1}>{branch}</Text>
           <Icon name="chevron-down" size={9} color={colors.textMuted} />
-        </View>
+        </TouchableOpacity>
       </View>
 
       {points !== undefined ? (
@@ -210,12 +218,58 @@ export function WashCountBanner({
   );
 }
 
+const TRACK_STAGES = ['Booked', 'In Progress', 'Finished'];
+
+/** Booked → In Progress → Finished progress track, with a car knob at the current stage. */
+export function WashTracker({ status }: { status: string }) {
+  const idx = status === 'ready' || status === 'settled' ? 2 : status === 'in_progress' ? 1 : 0;
+  const pct = `${idx * 50}%` as const;
+  return (
+    <View>
+      <View style={s.trackWrap}>
+        <View style={s.track} />
+        <LinearGradient
+          colors={['#6A00F4', '#AC00FF']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={[s.trackFill, { width: pct }]}
+        />
+        <View style={[s.trackNode, s.trackNodeStart]} />
+        <View style={[s.trackNode, s.trackNodeEnd, idx === 2 && s.trackNodeDone]} />
+        <View style={[s.trackKnob, { left: pct }]}>
+          <Image
+            source={require('../../../assets/scan-cars.png')}
+            style={s.trackCar}
+            resizeMode="contain"
+          />
+        </View>
+      </View>
+
+      <View style={s.trackLabels}>
+        {TRACK_STAGES.map((label, i) => {
+          const done = i < idx || (i === 2 && idx === 2);
+          const current = i === idx && !done;
+          return (
+            <View key={label} style={s.trackLabelItem}>
+              <Icon
+                name={current ? 'circle-notch' : 'check-circle'}
+                size={10}
+                color={done || current ? colors.primary : colors.border}
+              />
+              <Text style={s.trackLabel}>{label}</Text>
+            </View>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
 /** One service tile in the pick-a-wash grid. */
 export function ServiceTile({
-  name, price, badge, badgeTone, pointsBadge, meta, onPress, selected,
+  name, badge, badgeTone, pointsBadge, meta, onPress, selected,
 }: {
   name: string;
-  price?: string;
   badge?: string;
   badgeTone?: 'brand' | 'accent';
   /** The floating "With points" pill over the art, as in the mockup's
@@ -237,33 +291,41 @@ export function ServiceTile({
           overhanging badges anchor to this pill, not the tile — there is
           no card edge left for them to pin to. */}
       <View style={[s.tileArt, selected && s.tileArtSelected]}>
-        {badge ? (
-          <View style={[s.tileBadge, badgeTone === 'accent' && s.tileBadgeAccent]}>
-            <Text style={s.tileBadgeText}>{badge}</Text>
-          </View>
-        ) : null}
+        {art.image ? (
+          <Image
+            source={art.image}
+            style={[
+              s.tileArtImage,
+              art.flip && { transform: [{ scaleX: -1 }] },
+              art.sizeDelta ? { width: 76 + art.sizeDelta, height: 76 + art.sizeDelta, marginLeft: -38 - art.sizeDelta / 2 } : null,
+              art.offsetY ? { top: -31 + art.offsetY } : null,
+            ]}
+            resizeMode="contain"
+          />
+        ) : (
+          <Icon name={art.icon} size={40} color={colors.ink[400]} />
+        )}
+        {/* Badges render after the art so they paint on top of it. */}
         {pointsBadge ? (
           <LinearGradient
             colors={colors.rewardIconGradient}
             start={colors.rewardIconGradientStart}
             end={colors.rewardIconGradientEnd}
-            style={s.tilePointsPill}
+            style={s.tileFloatPill}
           >
-            <Text style={s.tilePointsPillText}>{pointsBadge}</Text>
+            <Text style={s.tileFloatPillText}>{pointsBadge}</Text>
           </LinearGradient>
+        ) : badge ? (
+          <View style={[s.tileFloatPill, { backgroundColor: badgeTone === 'brand' ? colors.primary : colors.accent }]}>
+            <Text style={s.tileFloatPillText}>{badge}</Text>
+          </View>
         ) : null}
-        {art.image ? (
-          <Image source={art.image} style={s.tileArtImage} resizeMode="contain" />
-        ) : (
-          <Icon name={art.icon} size={40} color={colors.ink[400]} />
-        )}
       </View>
 
-      <View style={s.tileFoot}>
-        <Text style={s.tileName} numberOfLines={1}>{name}</Text>
-        {price ? <Text style={s.tilePrice} numberOfLines={1}>{price}</Text> : null}
-        {meta ? <Text style={s.tileMeta} numberOfLines={1}>{meta}</Text> : null}
-      </View>
+      <Text style={s.tileName} numberOfLines={1}>
+        {name}
+        {meta ? <Text style={s.tileMeta}>{`  •  ${meta}`}</Text> : null}
+      </Text>
     </TouchableOpacity>
   );
 }
@@ -276,10 +338,14 @@ export function ScanBar({ onPress, onManual }: { onPress: () => void; onManual: 
         <LinearGradient
           colors={colors.gradientScan}
           locations={colors.gradientScanLocations}
-          start={colors.gradientActionStart}
-          end={colors.gradientActionEnd}
+          start={colors.gradientScanStart}
+          end={colors.gradientScanEnd}
           style={s.scanBar}
         >
+          {/* Stripes first so the cars paint over their left edge. */}
+          <View style={s.scanStripes} pointerEvents="none">
+            <ScanBarStripes />
+          </View>
           {/* The cars sit against the left edge and bleed off the bottom of
               the bar, exactly as in the mockup. Absolute so they cannot
               push the label off-centre as the bar's width changes. */}
@@ -288,12 +354,6 @@ export function ScanBar({ onPress, onManual }: { onPress: () => void; onManual: 
             style={s.scanCars}
             resizeMode="contain"
           />
-          {/* The diagonal stripe pattern from the Figma export, sitting on
-              its own in the middle of the bar — a decorative patch, not a
-              full-width overlay, per request. */}
-          <View style={s.scanStripes} pointerEvents="none">
-            <ScanBarStripes width={90} height={46} />
-          </View>
           <Text style={s.scanText}>Scan to wash</Text>
           <View style={s.scanQr}>
             <Icon name="qrcode" size={19} color={colors.ink[900]} />
@@ -309,13 +369,15 @@ export function ScanBar({ onPress, onManual }: { onPress: () => void; onManual: 
 
 /** A finished job in the recent list. */
 export function RecentRow({
-  title, subtitle, amount, tone, onPress,
+  title, subtitle, amount, tone, onPress, image,
 }: {
   title: string;
   subtitle: string;
   amount: string;
   tone?: 'brand' | 'accent';
   onPress?: () => void;
+  /** Service art shown in the icon box; falls back to a car glyph. */
+  image?: any;
 }) {
   return (
     <TouchableOpacity
@@ -325,7 +387,11 @@ export function RecentRow({
       style={s.recentRow}
     >
       <View style={s.recentIcon}>
-        <Icon name="car" size={14} color={colors.textSecondary} />
+        {image ? (
+          <Image source={image} style={s.recentIconImage} resizeMode="contain" />
+        ) : (
+          <Icon name="car" size={14} color={colors.textSecondary} />
+        )}
       </View>
       <View style={{ flex: 1 }}>
         <Text style={s.recentTitle} numberOfLines={1}>{title}</Text>
@@ -379,7 +445,7 @@ export function SuccessToast({
   return (
     <View style={s.toastWrap} pointerEvents="box-none">
       <LinearGradient
-        colors={colors.gradientBrandDeep}
+        colors={['#2A3D9A', '#203187']}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={s.toast}
@@ -390,8 +456,8 @@ export function SuccessToast({
 
         <Text style={s.toastTitle}>Payment Successfully</Text>
         <Text style={s.toastBody}>
-          You have successfully taken payment for this wash
-          {points ? <Text style={s.toastPoints}> and earned +{points} points</Text> : null}
+          You have successfully paid for your car wash
+          {points ? <>{' '}and have earned <Text style={s.toastPoints}>+{points} points</Text></> : null}
         </Text>
 
         <TouchableOpacity onPress={onViewPoints} style={s.toastBtn} activeOpacity={0.8}>
@@ -402,28 +468,70 @@ export function SuccessToast({
   );
 }
 
-/** The promotional card that closes the page. */
-export function PromoCard({ onPress }: { onPress: () => void }) {
+/**
+ * The promotional card that closes the page — "wash 2 cars for the price of
+ * 1", now a real one-time offer rather than decoration:
+ *
+ *  - `available` (default): grab it → booking flow with the offer attached;
+ *    after the paid wash settles, the next one is free.
+ *  - `armed`: grabbed and paid, waiting to be spent — the CTA becomes
+ *    "Book your free wash" and the card stays tappable.
+ *  - `used`: spent — the card goes grey and inert, but stays on the page
+ *    so the layout never jumps and the offer doesn't read as a glitch.
+ */
+export function PromoCard({
+  onPress, state = 'available',
+}: {
+  onPress: () => void;
+  state?: 'available' | 'armed' | 'used';
+}) {
+  const used = state === 'used';
   return (
-    <TouchableOpacity onPress={onPress} activeOpacity={0.9}>
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.9}
+      disabled={used}
+    >
       <LinearGradient
-        colors={colors.gradientBrandDeep}
+        colors={used
+          ? [colors.bgSunken, colors.bgSunken]
+          : colors.gradientBrandDeep}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={s.promo}
       >
         <View style={{ flex: 1 }}>
-          <Text style={s.promoLine}>WASH 2 CARS</Text>
-          <View style={s.promoRow}>
-            <Text style={s.promoLine}>For</Text>
-            <O1Badge size={24} />
-            <Text style={s.promoLine}>price</Text>
-          </View>
-          <View style={s.promoCta}>
-            <Text style={s.promoCtaText}>Grab offer</Text>
-          </View>
+          {state === 'armed' ? (
+            <>
+              <Text style={s.promoLine}>YOUR NEXT WASH</Text>
+              <View style={s.promoRow}>
+                <Text style={s.promoLine}>Is</Text>
+                <O1Badge size={24} />
+                <Text style={s.promoLine}>FREE</Text>
+              </View>
+              <View style={[s.promoCta, used && s.promoCtaUsed]}>
+                <Text style={s.promoCtaText}>Book your free wash</Text>
+              </View>
+            </>
+          ) : (
+            <>
+              <Text style={[s.promoLine, used && s.promoLineUsed]}>WASH 2 CARS</Text>
+              <View style={s.promoRow}>
+                <Text style={[s.promoLine, used && s.promoLineUsed]}>For</Text>
+                <O1Badge size={24} />
+                <Text style={[s.promoLine, used && s.promoLineUsed]}>price</Text>
+              </View>
+              <View style={[s.promoCta, used && s.promoCtaUsed]}>
+                <Text style={s.promoCtaText}>{used ? 'Offer already used' : 'Grab offer'}</Text>
+              </View>
+            </>
+          )}
         </View>
-        <Icon name="car" size={44} color="rgba(255,255,255,0.9)" />
+        <Icon
+          name={used ? 'check-circle' : 'car'}
+          size={44}
+          color={used ? 'rgba(0,0,0,0.25)' : 'rgba(255,255,255,0.9)'}
+        />
       </LinearGradient>
     </TouchableOpacity>
   );
@@ -540,8 +648,8 @@ const s = StyleSheet.create({
   // (`tileArt` below); the label floats on the plain page background.
   tile: {
     width: '48%',
-    paddingTop: spacing.sm,
-    minHeight: 118,
+    paddingTop: spacing.xl,
+    marginBottom: spacing.sm,
   },
   // A selected tile still needs a visible state without the tile becoming
   // a box — a ring around the art's own pill reads as "chosen" without
@@ -581,62 +689,64 @@ const s = StyleSheet.create({
     width: 76,
     height: 76,
   },
-  // The "With points" pill floats over the art's top-left, per the Figma
-  // frame (top:-3, left:38 in the mockup's own coordinate space — scaled
-  // down here to this tile's much smaller art area, same corner). Geometry
-  // corrected to the frame's own numbers: 8px radius (a rounded rect, not
-  // a pill), 8px gap. Padding and text bumped up a step from the frame's
-  // literal 8/4 and micro size — those read too small once actually laid
-  // out at this scale, so this is a size up in the same proportions.
-  // Background is the same purple→navy gradient used on the reward icon,
-  // not the flat black the CSS export's top layer would literally paint —
-  // see the note on `rewardIconGradient` for why that layer is not what
-  // ends up on screen.
-  tilePointsPill: {
+  // One floating pill style for both "With points" and "New": pinned only
+  // by top/right (never left too — on react-native-web pinning both edges
+  // stretches it full width), so it sizes to its text and floats above the
+  // art's top-right corner as in the mockup.
+  tileFloatPill: {
     position: 'absolute',
-    top: -3,
-    left: 6,
+    top: -14,
+    right: 6,
     zIndex: 3,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
     borderRadius: radii.sm,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-  },
-  tilePointsPillText: {
-    fontSize: font.sm,
-    fontWeight: weight.medium,
-    color: '#fff',
-  },
-  // No card edge to pin to any more, so the label block carries its own
-  // horizontal gutter instead of inheriting it from the tile.
-  tileFoot: { marginTop: 'auto', paddingHorizontal: 2 },
-  // Pinned to the art's own top edge now rather than the tile's — same
-  // corner-notch look, just anchored to the pill it actually sits on.
-  tileBadge: {
-    position: 'absolute',
-    top: -1,
-    left: spacing.md,
-    backgroundColor: colors.primary,
-    borderTopLeftRadius: 0,
-    borderTopRightRadius: 0,
-    borderBottomLeftRadius: radii.sm,
-    borderBottomRightRadius: radii.sm,
     paddingHorizontal: 8,
     paddingVertical: 3,
-    zIndex: 2,
   },
-  tileBadgeAccent: { backgroundColor: colors.accent, left: undefined, right: spacing.md },
-  tileBadgeText: {
+  tileFloatPillText: {
     fontSize: font.micro,
-    fontWeight: weight.heavy,
+    fontWeight: weight.semibold,
     color: '#fff',
-    letterSpacing: tracking.caps,
   },
-  tileName: { fontSize: font.sm, fontWeight: weight.bold, color: colors.text },
-  tilePrice: { fontSize: font.xs, color: colors.textSecondary, fontWeight: weight.semibold, marginTop: 1 },
-  tileMeta: { fontSize: font.micro, color: colors.textMuted, marginTop: 1 },
+  tileName: {
+    fontSize: font.sm,
+    fontWeight: weight.medium,
+    color: colors.text,
+    textAlign: 'center',
+  },
+  tileMeta: { fontSize: font.xs, fontWeight: weight.regular, color: colors.textMuted },
+
+  // ── Wash tracker ──
+  trackWrap: { height: 30, justifyContent: 'center', marginHorizontal: 9 },
+  track: {
+    position: 'absolute', left: 0, right: 0,
+    height: 12, borderRadius: radii.full, backgroundColor: '#E9E9F0',
+  },
+  trackFill: { position: 'absolute', left: 0, height: 12, borderRadius: radii.full },
+  trackNode: {
+    position: 'absolute',
+    width: 20, height: 20, borderRadius: 10,
+    backgroundColor: '#fff',
+    borderWidth: 4,
+  },
+  trackNodeStart: { left: -9, borderColor: '#6A00F4' },
+  trackNodeEnd: { right: -9, borderColor: '#E9E9F0' },
+  trackNodeDone: { borderColor: '#AC00FF' },
+  trackKnob: {
+    position: 'absolute',
+    marginLeft: -15,
+    width: 30, height: 30, borderRadius: 15,
+    backgroundColor: '#fff',
+    alignItems: 'center', justifyContent: 'center',
+    ...shadow.sm,
+  },
+  trackCar: { width: 22, height: 16, transform: [{ scaleX: -1 }] },
+  trackLabels: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: spacing.sm,
+  },
+  trackLabelItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  trackLabel: { fontSize: font.xs, color: colors.textSecondary, fontWeight: weight.medium },
 
   // ── Scan bar ──
   // 46px tall with a 16px radius, per the Figma frame. `overflow: hidden`
@@ -652,22 +762,24 @@ const s = StyleSheet.create({
     overflow: 'hidden',
     ...shadow.sm,
   },
+  // Larger than the bar and pushed past its left and bottom edges, so the
+  // bar's own overflow:hidden crops the cars the way the Figma frame does.
   scanCars: {
     position: 'absolute',
-    left: 0,
-    bottom: -2,
-    width: 96,
-    height: 44,
+    left: -36,
+    bottom: -14,
+    width: 118,
+    height: 64,
+    // The source art faces left; mirrored so the cars drive toward the label.
+    transform: [{ scaleX: -1 }],
   },
   // The stripe patch, shifted left of centre per request — closer to the
   // car icon's side of the bar rather than dead-centre.
+  // 73.5px into a 327px bar in the Figma frame = 22.5% of the width.
   scanStripes: {
     position: 'absolute',
-    left: '32%',
-    marginLeft: -45,
+    left: '22.5%',
     top: 0,
-    bottom: 0,
-    width: 90,
   },
   scanText: {
     // Centred in the bar rather than laid out in the row: the cars on the
@@ -707,6 +819,7 @@ const s = StyleSheet.create({
     backgroundColor: colors.bgSunken,
     alignItems: 'center', justifyContent: 'center',
   },
+  recentIconImage: { width: 28, height: 24 },
   recentTitle: { fontSize: font.sm, fontWeight: weight.bold, color: colors.text },
   recentSub: { fontSize: font.micro, color: colors.textMuted, marginTop: 2 },
   recentAmount: { fontSize: font.sm, fontWeight: weight.heavy, color: colors.primary },
@@ -768,6 +881,9 @@ const s = StyleSheet.create({
     color: '#fff',
     letterSpacing: tracking.tight,
   },
+  // Ink colour flips with the card: white on the dark gradient, muted ink
+  // when the card is greyed out in its 'used' state.
+  promoLineUsed: { color: colors.textMuted },
   promoCta: {
     alignSelf: 'flex-start',
     backgroundColor: 'rgba(255,255,255,0.18)',
@@ -775,6 +891,11 @@ const s = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: 6,
     marginTop: spacing.md,
+  },
+  // The inert 'used' state: the CTA pill keeps its shape but reads as
+  // spent — darker fill, muted text — rather than still being tappable.
+  promoCtaUsed: {
+    backgroundColor: 'rgba(0,0,0,0.08)',
   },
   promoCtaText: { fontSize: font.xs, fontWeight: weight.bold, color: '#fff' },
 });

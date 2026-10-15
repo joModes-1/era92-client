@@ -8,6 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, radii, font, spacing, weight, tracking } from '../theme';
 import Icon from './Icon';
 import GradientButton from './GradientButton';
+import ComponentButton2 from './buttons/ComponentButton2';
 import { AlertHost } from './AppAlert';
 import { Field } from './ui';
 
@@ -35,6 +36,7 @@ export default function ScannerSheet({
   allowManual = true,
   busy,
   extra,
+  onWebContinue,
 }: {
   visible: boolean;
   onClose: () => void;
@@ -48,12 +50,19 @@ export default function ScannerSheet({
   busy?: boolean;
   /** Optional controls rendered under the frame (e.g. a redeem toggle). */
   extra?: React.ReactNode;
+  /**
+   * Web only (no camera): render the scanner design with a placeholder frame
+   * and make "Enter car details" continue straight on, instead of the
+   * manual-code card. Native always uses the real camera flow.
+   */
+  onWebContinue?: () => void;
 }) {
   const webNoCamera = Platform.OS === 'web';
+  const webPreview = webNoCamera && !!onWebContinue;
   const insets = useSafeAreaInsets();
   const [permission, requestPermission] = useCameraPermissions();
   const [manual, setManual] = useState('');
-  const [showManual, setShowManual] = useState(webNoCamera);
+  const [showManual, setShowManual] = useState(webNoCamera && !webPreview);
   const [torch, setTorch] = useState(false);
   // Guard so a single QR in frame does not fire the callback dozens of times.
   const [locked, setLocked] = useState(false);
@@ -63,9 +72,9 @@ export default function ScannerSheet({
       setManual('');
       setLocked(false);
       setTorch(false);
-      setShowManual(webNoCamera);
+      setShowManual(webNoCamera && !webPreview);
     }
-  }, [visible, webNoCamera]);
+  }, [visible, webNoCamera, webPreview]);
 
   const handleBarcode = ({ data }: { data: string }) => {
     if (locked || busy) return;
@@ -88,14 +97,16 @@ export default function ScannerSheet({
             <Icon name="chevron-left" size={17} color="#fff" />
           </TouchableOpacity>
 
-          {!showManual && permission?.granted ? (
+          {webPreview || (!showManual && permission?.granted) ? (
             <TouchableOpacity
               onPress={() => setTorch((t) => !t)}
               hitSlop={12}
               style={styles.topBtn}
               activeOpacity={0.7}
             >
-              <Icon name={torch ? 'bolt' : 'bolt'} size={15} color={torch ? colors.accent : '#fff'} />
+              {/* Flash icon with a slash when off, per the design. */}
+              <Icon name="bolt" size={15} color={torch ? colors.accent : '#fff'} />
+              {!torch ? <View style={styles.torchSlash} /> : null}
             </TouchableOpacity>
           ) : (
             <View style={styles.topBtn} />
@@ -115,7 +126,11 @@ export default function ScannerSheet({
           {/* ── Camera ── */}
           {!showManual && (
             <View style={styles.frameWrap}>
-              {!permission ? (
+              {webPreview ? (
+                <Bracketed>
+                  <View style={styles.webFrame} />
+                </Bracketed>
+              ) : !permission ? (
                 <View style={styles.frameFallback}>
                   <ActivityIndicator color="#fff" />
                 </View>
@@ -142,26 +157,28 @@ export default function ScannerSheet({
                   />
                 </View>
               ) : (
-                <View style={styles.frame}>
-                  <CameraView
-                    style={StyleSheet.absoluteFill as any}
-                    facing="back"
-                    enableTorch={torch}
-                    barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
-                    onBarcodeScanned={locked || busy ? undefined : handleBarcode}
-                  />
-                  {(locked || busy) && (
-                    <View style={styles.scanningOverlay}>
-                      <ActivityIndicator color="#fff" />
-                      <Text style={styles.scanningText}>Reading code…</Text>
-                    </View>
-                  )}
-                </View>
+                <Bracketed>
+                  <View style={styles.frame}>
+                    <CameraView
+                      style={StyleSheet.absoluteFill as any}
+                      facing="back"
+                      enableTorch={torch}
+                      barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
+                      onBarcodeScanned={locked || busy ? undefined : handleBarcode}
+                    />
+                    {(locked || busy) && (
+                      <View style={styles.scanningOverlay}>
+                        <ActivityIndicator color="#fff" />
+                        <Text style={styles.scanningText}>Reading code…</Text>
+                      </View>
+                    )}
+                  </View>
+                </Bracketed>
               )}
             </View>
           )}
 
-          {hint && !showManual ? <Text style={styles.hint}>{hint}</Text> : null}
+          {hint && !showManual && !webPreview ? <Text style={styles.hint}>{hint}</Text> : null}
 
           {extra ? <View style={styles.extra}>{extra}</View> : null}
 
@@ -200,17 +217,23 @@ export default function ScannerSheet({
           )}
         </ScrollView>
 
+        {/* ── Web preview footer: continue straight on (no camera) ── */}
+        {webPreview && (
+          <View style={[styles.footer, { paddingBottom: insets.bottom + spacing.lg }]}>
+            <Text style={styles.footerNote}>Or enter car details manually</Text>
+            <ComponentButton2 title="Enter car details" onPress={onWebContinue!} loading={busy} />
+          </View>
+        )}
+
         {/* ── Footer: the manual escape hatch, as in the design ── */}
         {allowManual && !webNoCamera && (
           <View style={[styles.footer, { paddingBottom: insets.bottom + spacing.lg }]}>
             <Text style={styles.footerNote}>
               {showManual ? 'Point the camera at the code instead' : 'Or enter car details manually'}
             </Text>
-            <GradientButton
+            <ComponentButton2
               title={showManual ? 'Scan the code' : 'Enter car details'}
               onPress={() => setShowManual((s) => !s)}
-              size="lg"
-              full
             />
           </View>
         )}
@@ -224,10 +247,38 @@ export default function ScannerSheet({
   );
 }
 
+/** White corner brackets sitting just outside the scan frame, per the design. */
+function Bracketed({ children }: { children: React.ReactNode }) {
+  return (
+    <View style={styles.bracketWrap}>
+      {children}
+      <View style={[styles.corner, styles.cornerTL]} />
+      <View style={[styles.corner, styles.cornerTR]} />
+      <View style={[styles.corner, styles.cornerBL]} />
+      <View style={[styles.corner, styles.cornerBR]} />
+    </View>
+  );
+}
+
+const BRACKET = 18;
+const BRACKET_OFFSET = -10;
+
 const styles = StyleSheet.create({
-  // Near-black rather than pure black: the viewfinder frame and the white
-  // title pill both read better against it.
-  root: { flex: 1, backgroundColor: colors.ink[950] },
+  root: { flex: 1, backgroundColor: '#000' },
+
+  bracketWrap: { width: '100%' },
+  corner: { position: 'absolute', width: BRACKET, height: BRACKET, borderColor: '#fff' },
+  cornerTL: { top: BRACKET_OFFSET, left: BRACKET_OFFSET, borderTopWidth: 2, borderLeftWidth: 2 },
+  cornerTR: { top: BRACKET_OFFSET, right: BRACKET_OFFSET, borderTopWidth: 2, borderRightWidth: 2 },
+  cornerBL: { bottom: BRACKET_OFFSET, left: BRACKET_OFFSET, borderBottomWidth: 2, borderLeftWidth: 2 },
+  cornerBR: { bottom: BRACKET_OFFSET, right: BRACKET_OFFSET, borderBottomWidth: 2, borderRightWidth: 2 },
+  webFrame: { width: '100%', aspectRatio: 1, backgroundColor: '#D9D9D9' },
+  torchSlash: {
+    position: 'absolute',
+    width: 2, height: 22,
+    backgroundColor: '#fff',
+    transform: [{ rotate: '-45deg' }],
+  },
 
   topBar: {
     flexDirection: 'row',
@@ -265,12 +316,9 @@ const styles = StyleSheet.create({
   // thing on the screen after the feed itself.
   frame: {
     width: '100%',
-    aspectRatio: 0.92,
-    borderRadius: radii.sm,
+    aspectRatio: 1,
     overflow: 'hidden',
     backgroundColor: colors.ink[800],
-    borderWidth: 3,
-    borderColor: colors.info,
   },
   frameFallback: {
     width: '100%',

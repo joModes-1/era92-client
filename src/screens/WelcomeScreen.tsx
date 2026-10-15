@@ -1,9 +1,9 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Image } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { colors, font, spacing, weight, tracking } from '../theme';
-import GradientButton from '../components/GradientButton';
+import ComponentButton1 from '../components/buttons/ComponentButton1';
 import CarWashLogo from '../components/CarWashLogo';
 import GradientText from '../components/GradientText';
 
@@ -27,22 +27,23 @@ export default function WelcomeScreen() {
   return (
     <SafeAreaView style={s.root} edges={['top', 'bottom']}>
       <View style={s.brandRow}>
-        <CarWashLogo height={22} />
+        <CarWashLogo height={32} />
       </View>
 
       <ScrollView
         contentContainerStyle={s.body}
         showsVerticalScrollIndicator={false}
       >
-        <Text style={s.headline}>TRUSTED & AFFORDABLE</Text>
+        <Text style={s.headline}>TRUSTED &</Text>
+        <Text style={s.headline}>AFFORDABLE</Text>
         <View style={s.carWashRow}>
           <GradientText
             text="CAR WASH"
             style={s.carWashText}
-            colorsArr={colors.gradientAction}
-            locations={colors.gradientActionLocations}
-            start={colors.gradientActionStart}
-            end={colors.gradientActionEnd}
+            colorsArr={colors.gradientHeadline}
+            locations={colors.gradientHeadlineLocations}
+            start={colors.gradientHeadlineStart}
+            end={colors.gradientHeadlineEnd}
           />
           <Image
             source={require('../../assets/services/full-car-wash.png')}
@@ -53,11 +54,9 @@ export default function WelcomeScreen() {
       </ScrollView>
 
       <View style={s.footer}>
-        <GradientButton
+        <ComponentButton1
           title="Continue with phone number"
           onPress={() => navigation.navigate('Register')}
-          size="action"
-          full
         />
 
         <Text style={s.legal}>
@@ -74,10 +73,11 @@ const s = StyleSheet.create({
 
   brandRow: {
     flexDirection: 'row',
+    justifyContent: 'center',
     alignItems: 'center',
     gap: 3,
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
+    paddingTop: spacing.xxxl,
   },
   // Children are laid out against the left gutter (16px in the design),
   // not centred: the headline block is deliberately narrower than the
@@ -89,18 +89,21 @@ const s = StyleSheet.create({
     paddingHorizontal: spacing.lg,
   },
 
-  // Left-aligned in a 220-wide block, per the Figma frame — the lines
-  // break on their own at that width, which is what gives the headline its
-  // stepped left edge. Centring it loses that entirely.
+  // Left-aligned in a fixed-width block — the lines break on their own at
+  // that width, which is what gives the headline its stepped left edge.
+  // Centring it loses that entirely. The width is tied to fontSize: wide
+  // enough that "TRUSTED &" fits on one line, narrow enough that "AFFORDABLE"
+  // still wraps to its own — re-check this whenever fontSize changes, since
+  // a bigger size needs a wider block just to keep the same line breaks.
   headline: {
-    width: 220,
+    width: 280,
     textAlign: 'left',
-    fontSize: 32,
+    fontSize: 40,
     fontWeight: weight.black,
     fontStyle: 'italic',
     color: colors.text,
     letterSpacing: tracking.tight,
-    lineHeight: 34,
+    lineHeight: 48,
   },
   // "CAR WASH": a stand-in for Konsens Extrabold Italic (not a Google Font,
   // so not installable the way Poppins/Instrument Sans are — swap this for
@@ -114,11 +117,11 @@ const s = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    marginTop: 2,
+    marginTop: 6,
   },
   carWashText: {
     fontFamily: 'Poppins_900Black_Italic',
-    fontSize: 32,
+    fontSize: 40,
     lineHeight: 32,
     letterSpacing: 0,
     textTransform: 'uppercase',
@@ -129,10 +132,12 @@ const s = StyleSheet.create({
   // this at "-180deg", but that reading is for a source image already
   // authored upside down in that specific frame — applied to this asset it
   // renders wheels-up, so it is left unrotated to match how it actually
-  // looks the right way up.
+  // looks the right way up. The source art faces left; mirrored horizontally
+  // here so the car reads as driving toward "CAR WASH", not away from it.
   carWashIcon: {
     width: 36,
     height: 32,
+    transform: [{ scaleX: -1 }],
   },
 
   footer: {
@@ -147,5 +152,4 @@ const s = StyleSheet.create({
     lineHeight: 15,
   },
   legalLink: { color: colors.primary, fontWeight: weight.semibold },
-
 });

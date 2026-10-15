@@ -346,37 +346,26 @@ export const api = {
   },
 
   // Washes
-  startWash: (data: any) => req('POST', '/washes', data),
+  //
+  // The worker no longer starts, attaches, cancels, or manually settles a
+  // wash — a client books their own (clientBookWash, below) and the server
+  // auto-assigns a free worker on the spot (see tryAutoAssign() server-
+  // side). What's left for a worker is just finishing the one car they
+  // were assigned and confirming payment. startWash/attachClient/
+  // applyFreeWash/cancelWash/settleByToken/getMyToday were all part of the
+  // old worker-initiates-everything model and had no remaining callers
+  // once WorkerHome.tsx was cut down — removed rather than left as dead
+  // exports. Their backend routes still exist as a manager/orgadmin-only
+  // fallback (see the server's own docs) but nothing in this app calls them.
   getQueue: () => req('GET', '/washes/queue'),
-  // Claims a client's self-service booking — the counterpart to a worker
-  // scanning a customer's QR in the old flow. Requires an open shift and no
-  // wash already in progress; races against other workers safely.
+  // Claims a client's self-service booking manually — the fallback for
+  // when nobody was free to auto-assign at booking time. Requires an open
+  // shift and no wash already in progress; races against other workers
+  // safely.
   acceptWash: (id: string) => req('POST', `/washes/${id}/accept`),
   washDone: (id: string) => req('POST', `/washes/${id}/wash-done`),
   settle: (id: string, data: any) => req('POST', `/washes/${id}/settle`, data),
-  settleByToken: (data: any) => req('POST', '/washes/settle-by-token', data),
-
-  // Link a customer to an already-started wash, by scanned start token or by
-  // their member code. Turns an anonymous job into a loyalty-earning one.
-  attachClient: (id: string, data: { start_token?: string; member_code?: string; use_free_wash?: boolean }) =>
-    req('POST', `/washes/${id}/attach-client`, data),
-  // One-tap "use it now" for a wash that already has the customer attached
-  // (e.g. they scanned their own start-token) — attachClient can't be reused
-  // here since it refuses once a client is already linked.
-  applyFreeWash: (id: string) => req('POST', `/washes/${id}/apply-free-wash`),
-  cancelWash: (id: string, reason: string, note?: string) =>
-    req('POST', `/washes/${id}/cancel`, { reason, note }),
-  getWash: (id: string) => req('GET', `/washes/${id}`),
   listWashes: (params?: string) => req('GET', `/washes${params ? '?' + params : ''}`),
-  getMyToday: () => req('GET', '/washes/mine/today'),
-
-  // Note: the client-side minting calls that used to live here
-  // (startToken/payToken — a client generating a QR for a worker to scan)
-  // were removed along with StartWashQRScreen and PayWashQRScreen. Booking
-  // now happens through clientBookWash below, with no QR shown by the
-  // client at all. The worker still SENDS a scanned start_token value
-  // through attachClient/startWash for their own walk-in flow — that server
-  // route and this consumption path are unrelated and untouched.
 
   // Reports
   daily: (date: string, branch?: string) => req('GET', `/reports/daily?date=${date}${branch ? '&branch_id=' + branch : ''}`),
@@ -406,8 +395,9 @@ export const api = {
   platformOrgs: () => req('GET', '/platform/orgs'),
   platformOrg: (id: string) => req('GET', `/platform/orgs/${id}`),
 
-  // Creates the org AND its first orgadmin in one transaction; returns a
-  // one-time temp password for that admin.
+  // Creates the org AND its first orgadmin in one transaction. No password
+  // is generated or emailed — the admin signs in with phone + one-time code,
+  // so admin_phone is the account's real identity and is required.
   createOrg: (data: {
     name: string;
     slug: string;
@@ -415,7 +405,7 @@ export const api = {
     contact_name?: string;
     admin_name: string;
     admin_email: string;
-    admin_phone?: string;
+    admin_phone: string;
   }) => req('POST', '/platform/orgs', data),
 
   updateOrg: (id: string, data: { name?: string; contact_name?: string; plan?: string }) =>
@@ -423,15 +413,15 @@ export const api = {
   suspendOrg: (id: string, reason: string) => req('POST', `/platform/orgs/${id}/suspend`, { reason }),
   activateOrg: (id: string) => req('POST', `/platform/orgs/${id}/activate`),
 
-  // Add another orgadmin to an existing org
-  addOrgAdmin: (orgId: string, data: { full_name: string; email: string; phone?: string }) =>
+  // Add another orgadmin to an existing org. phone is required — it is how
+  // they sign in, not just a contact detail.
+  addOrgAdmin: (orgId: string, data: { full_name: string; email: string; phone: string }) =>
     req('POST', `/platform/orgs/${orgId}/admins`, data),
 
   // Fellow platform admins (sysadmins)
   listPlatformAdmins: () => req('GET', '/platform/admins'),
-  createPlatformAdmin: (data: { full_name: string; username?: string; email: string; phone?: string }) =>
+  createPlatformAdmin: (data: { full_name: string; username?: string; email: string; phone: string }) =>
     req('POST', '/platform/admins', data),
-  resetPlatformAdminPassword: (id: string) => req('POST', `/platform/admins/${id}/reset-password`),
 
   // ── SaaS billing (platform side) ──────────────────────────────
   listPlans: () => req('GET', '/platform/plans'),
@@ -502,7 +492,6 @@ export const api = {
   // which lets the server pick one.
   clientPricesForBranch: (branchId: string) => req('GET', `/me/washes/prices?branch_id=${branchId}`),
   clientLedger: () => req('GET', '/me/washes/loyalty/ledger'),
-  clientQR: () => req('GET', '/me/washes/qr'),
 
   // Client self-service booking
   //
@@ -510,6 +499,20 @@ export const api = {
   // The QR encodes both org_id and code, since code is only unique per-org.
   resolveBranchCode: (code: string, orgId: string) =>
     req('GET', `/me/branches/resolve?code=${encodeURIComponent(code)}&org_id=${encodeURIComponent(orgId)}`),
+  // The nearby-branch picker: the org's active branches with coordinates,
+  // sorted by distance from the device's current fix, closest first. The
+  // fix is used only to compute distance server-side — nothing is stored.
+  // lat/lng omitted entirely = no fix available (permission declined, GPS
+  // off) — the server then returns an alphabetical list with no distances.
+  nearbyBranches: (orgId: string, lat?: number, lng?: number, radiusKm?: number) => {
+    const qs = new URLSearchParams({ org_id: orgId });
+    if (lat !== undefined && lng !== undefined) {
+      qs.set('lat', String(lat));
+      qs.set('lng', String(lng));
+    }
+    if (radiusKm) qs.set('radius_km', String(radiusKm));
+    return req('GET', `/me/branches/nearby?${qs.toString()}`);
+  },
   // Creates a wash in 'requested' status with no worker attached yet — the
   // client's own booking action, distinct from the worker's startWash().
   clientBookWash: (data: {
@@ -519,13 +522,17 @@ export const api = {
     plate?: string;
     vehicle_color?: string;
     use_free_wash?: boolean;
+    use_promo?: boolean;
+    use_promo_free?: boolean;
     declared_payment_method?: 'cash' | 'mtn' | 'airtel';
     declared_payment_phone?: string;
   }) => req('POST', '/me/washes', data),
+  // The home screen's promo card state: available / armed (next wash free)
+  // / used. One-time per client, enforced server-side by the database.
+  clientPromo: () => req('GET', '/me/washes/promo'),
   // Declares how the client intends to pay. Does NOT settle the wash and
   // does NOT charge anything — see PaymentMethodScreen.tsx for why.
   declarePaymentIntent: (washId: string, data: { method: 'cash' | 'mtn' | 'airtel'; phone?: string }) =>
     req('POST', `/me/washes/${washId}/payment-intent`, data),
   cancelBookingRequest: (washId: string) => req('POST', `/me/washes/${washId}/cancel-request`),
-  lookupClient: (code: string) => req('GET', `/clients/lookup?member_code=${code}`),
 };

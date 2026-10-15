@@ -8,8 +8,9 @@ import { useNavigation } from '@react-navigation/native';
 import { api, setTokens, setActor } from '../api';
 import { useAuth } from '../api/AuthContext';
 import { colors, radii, font, spacing, weight, tracking, noFocusRing } from '../theme';
-import GradientButton from '../components/GradientButton';
+import ComponentButton1 from '../components/buttons/ComponentButton1';
 import Icon from '../components/Icon';
+import UgandaFlag from '../components/UgandaFlag';
 
 /**
  * Customer sign-in: a phone number and a code, nothing else.
@@ -75,7 +76,15 @@ export default function RegisterScreen() {
       setDevCode(data.otp_code || '');
       setResendIn(RESEND_SECONDS);
       setStep('code');
-      setTimeout(() => codeInput.current?.focus(), 350);
+      // data.otp_code only ever arrives from the backend in TEST_MODE (a
+      // real SMS send never echoes the code back) — safe to auto-fill the
+      // boxes with it since this can never happen against a real/production
+      // backend, only a local/test one.
+      if (data.otp_code) {
+        setCode(data.otp_code);
+      } else {
+        setTimeout(() => codeInput.current?.focus(), 350);
+      }
       if (data.sent === false) {
         setError('We could not send the code by SMS. Check the number, or try again.');
       }
@@ -197,28 +206,15 @@ export default function RegisterScreen() {
               </Text>
             </TouchableOpacity>
 
-            {devCode ? (
-              <TouchableOpacity style={styles.devHint} onPress={() => setCode(devCode)} activeOpacity={0.7}>
-                <Icon name="info-circle" size={11} color={colors.info} />
-                <Text style={styles.devHintText}>Testing code: {devCode} — tap to fill</Text>
-              </TouchableOpacity>
-            ) : null}
-
-            {error ? (
-              <View style={styles.errorBox}>
-                <Icon name="exclamation-circle" size={12} color={colors.error} />
-                <Text style={styles.errorText}>{error}</Text>
-              </View>
-            ) : null}
           </ScrollView>
 
           <View style={styles.footer} onStartShouldSetResponder={() => true}>
-            <GradientButton
+            <ComponentButton1
               title="Confirm"
               onPress={verify}
               disabled={!canVerify}
               loading={loading}
-              size="action"
+              
               full
             />
           </View>
@@ -242,7 +238,7 @@ export default function RegisterScreen() {
           showsVerticalScrollIndicator={false}
         >
           <View style={[styles.phoneField, focused && styles.phoneFieldFocus]}>
-            <Text style={styles.flag}>🇺🇬</Text>
+            <UgandaFlag width={20} height={14} />
             <Text style={styles.dial}>256</Text>
             <TextInput
               value={phone}
@@ -251,6 +247,13 @@ export default function RegisterScreen() {
               onBlur={() => setFocused(false)}
               placeholder=""
               keyboardType="phone-pad"
+              // react-native-web maps keyboardType="phone-pad" to
+              // <input type="tel">, which does not reliably bring up a
+              // numeric virtual keyboard on every browser/OS — inputMode
+              // takes priority over keyboardType there and "numeric" does.
+              // Native (iOS/Android) ignores this prop entirely and keeps
+              // using keyboardType as normal.
+              inputMode="numeric"
               textContentType="telephoneNumber"
               autoComplete="tel"
               style={styles.phoneInput}
@@ -278,12 +281,12 @@ export default function RegisterScreen() {
           style={styles.footer}
           onStartShouldSetResponder={() => true}
         >
-          <GradientButton
+          <ComponentButton1
             title="Continue"
             onPress={sendCode}
             disabled={!canSend}
             loading={loading}
-            size="action"
+            
             full
           />
         </View>
@@ -339,7 +342,6 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
   },
   phoneFieldFocus: { borderBottomColor: colors.primary },
-  flag: { fontSize: font.xl },
   dial: { fontSize: font.lg, fontWeight: weight.semibold, color: colors.textSecondary },
   phoneInput: {
     flex: 1,

@@ -156,7 +156,6 @@ export default function CustomersScreen() {
                     leadingTone={credits > 0 ? 'accent' : 'neutral'}
                     title={c.full_name}
                     subtitle={c.phone}
-                    meta={c.member_code}
                     last={i === clients.length - 1}
                     trailing={
                       <View style={styles.right}>

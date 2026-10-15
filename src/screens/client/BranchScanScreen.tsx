@@ -15,6 +15,10 @@ import ScannerSheet from '../../components/ScannerSheet';
  * renders full-screen with its own dark chrome, so this screen has nothing
  * to add beyond resolving what gets scanned.
  */
+// Branch used when booking from a browser (no camera). Override per
+// environment with EXPO_PUBLIC_WEB_BRANCH_CODE.
+const WEB_BRANCH_CODE = process.env.EXPO_PUBLIC_WEB_BRANCH_CODE || 'NTD';
+
 export default function BranchScanScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
@@ -22,9 +26,13 @@ export default function BranchScanScreen() {
   const alert = useAppAlert();
   const [busy, setBusy] = useState(false);
 
-  // Threaded through from LoyaltyScreen's "Redeem" button — carries all the
-  // way to BookWashScreen so the eventual booking sets use_free_wash: true.
-  const { useFreeWash } = route.params || {};
+  // Threaded through from LoyaltyScreen's "Redeem" button (useFreeWash) and
+  // from the home screen's promo card (usePromo when grabbing, usePromoFree
+  // when the offer is armed and this next booking is the free one) — carries
+  // all the way to BookWashScreen so the eventual booking carries the right
+  // flag. preselectServiceName comes from tapping a service tile on the
+  // home screen directly, rather than the generic "Scan to wash" bar.
+  const { useFreeWash, usePromo, usePromoFree, preselectServiceName, payWithPoints } = route.params || {};
 
   const resolveBranch = async (code: string) => {
     if (!actor?.org_id) {
@@ -34,7 +42,15 @@ export default function BranchScanScreen() {
     setBusy(true);
     try {
       const branch = await api.resolveBranchCode(code, actor.org_id);
-      navigation.replace('BookWash', { branchId: branch.id, branchName: branch.name, useFreeWash });
+      navigation.replace('BookWash', {
+        branchId: branch.id,
+        branchName: branch.name,
+        useFreeWash: useFreeWash && !usePromo && !usePromoFree,
+        usePromo,
+        usePromoFree,
+        preselectServiceName,
+        payWithPoints,
+      });
     } catch (e: any) {
       alert('Code not recognised', e.message || 'That QR or code was not recognised. Ask staff for the branch code.');
     }
@@ -46,7 +62,10 @@ export default function BranchScanScreen() {
       visible
       onClose={() => navigation.goBack()}
       busy={busy}
-      title="Scan to start"
+      title="Scan QR Code"
+      // A PC has no camera to scan the wall QR: "Enter car details" just
+      // continues with a default branch. Phones keep the real scan flow.
+      onWebContinue={() => resolveBranch(WEB_BRANCH_CODE)}
       hint="Point your camera at the QR code on the wall at this branch."
       manualLabel="Branch code"
       manualPlaceholder="e.g. NTD"

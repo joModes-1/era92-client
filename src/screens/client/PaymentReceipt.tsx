@@ -6,19 +6,19 @@ import * as Clipboard from 'expo-clipboard';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, radii, font, spacing, weight, tracking } from '../../theme';
 import Icon from '../../components/Icon';
-import GradientButton from '../../components/GradientButton';
+import ComponentButton1 from '../../components/buttons/ComponentButton1';
 
 /**
- * The receipt shown after a payment goes through.
+ * The receipt shown after a client declares how they're paying.
  *
- * A full page rather than a panel inside the payment sheet: this is the
- * thing a worker holds up to the customer, and often the only proof either
- * of them keeps. It has to be readable at arm's length and it has to stay
- * put until someone dismisses it.
+ * A full page rather than a small panel: this is the thing the client holds
+ * up at the bay, and often the only proof either side keeps. It has to be
+ * readable at arm's length and it has to stay put until someone dismisses
+ * it.
  *
  * The reference is tappable to copy — it is the one value anyone ever needs
- * to quote back, and retyping a 15-character string off a phone screen is
- * how disputes start.
+ * to quote back, and retyping a job number off a phone screen is how
+ * disputes start.
  */
 export default function PaymentReceipt({
   visible,
@@ -41,18 +41,18 @@ export default function PaymentReceipt({
   paymentType: string;
   recipient: string;
   amountUgx: number;
-  /** Points the worker earned for this job, if the scheme is on. */
+  /** Loyalty points earned for this wash, if any were. */
   pointsEarned?: number | null;
   paidAt?: Date;
   /** Whether a confirmation SMS actually went out. */
   smsSent?: boolean;
   /**
-   * Override the headline and its sub-line. Both default to the worker's
-   * "Payment Successful" copy, which is only true once money has actually
-   * been collected and settle has run. The client's declared-payment-intent
-   * screen reuses this same layout before any of that has happened, so it
-   * must pass its own honest copy instead ("Payment method recorded" —
-   * nothing has been paid yet).
+   * Override the headline and its sub-line. Both default to
+   * "Payment Successful", which is only true once a worker has actually
+   * collected money and settled the wash — the client's own
+   * declared-payment-intent screen (PaymentSuccessScreen.tsx) always
+   * overrides this with its own honest copy ("Payment method recorded" —
+   * nothing has been paid yet at that point).
    */
   title?: string;
   sub?: string;
@@ -88,7 +88,7 @@ export default function PaymentReceipt({
           showsVerticalScrollIndicator={false}
         >
           <View style={s.tick}>
-            <Icon name="check-circle" size={40} color={colors.success} />
+            <Icon name="check" size={16} color={colors.success} />
           </View>
 
           <Text style={s.title}>{title || 'Payment Successful'}</Text>
@@ -121,17 +121,17 @@ export default function PaymentReceipt({
             <Row label="Recipient" value={recipient} />
             <Row
               label="Date"
-              value={`${when.toLocaleDateString('en-GB')} | ${when.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
+              value={`${when.toLocaleDateString('en-GB')} | ${when.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}`}
             />
             {pointsEarned ? (
-              <Row label="Points earned" value={`+${pointsEarned} Points`} tone="accent" />
+              <Row label="Points earned" value={`+${pointsEarned} Points`} />
             ) : null}
-            <Row label="Total" value={`UGX ${ugx(amountUgx)}`} strong />
+            <Row label="Total" value={`UGX ${ugx(amountUgx)}`} />
           </View>
         </ScrollView>
 
         <View style={[s.footer, { paddingBottom: insets.bottom + spacing.lg }]}>
-          <GradientButton title="Continue" onPress={onClose} size="lg" full />
+          <ComponentButton1 title="Continue" onPress={onClose} />
         </View>
       </View>
     </Modal>
@@ -168,7 +168,7 @@ const s = StyleSheet.create({
 
   header: { paddingHorizontal: spacing.lg, paddingBottom: spacing.sm },
   closeBtn: {
-    width: 36, height: 36, borderRadius: radii.full,
+    width: 40, height: 40, borderRadius: radii.full,
     backgroundColor: colors.bgSunken,
     alignItems: 'center', justifyContent: 'center',
   },
@@ -179,12 +179,18 @@ const s = StyleSheet.create({
     alignItems: 'center',
   },
 
-  tick: { marginTop: spacing.xl, marginBottom: spacing.md },
+  // Outlined green ring with a thin check, per the Figma frame.
+  tick: {
+    width: 36, height: 36, borderRadius: 18,
+    borderWidth: 2, borderColor: colors.success,
+    alignItems: 'center', justifyContent: 'center',
+    marginTop: spacing.xxl, marginBottom: spacing.md,
+  },
   title: {
-    fontSize: font.xxl,
-    fontWeight: weight.black,
+    fontSize: font.xl,
+    fontWeight: weight.bold,
     color: colors.text,
-    letterSpacing: tracking.display,
+    letterSpacing: tracking.tight,
   },
   sub: {
     fontSize: font.sm,
@@ -227,7 +233,7 @@ const s = StyleSheet.create({
     marginTop: 4,
   },
 
-  rows: { alignSelf: 'stretch', gap: spacing.lg },
+  rows: { alignSelf: 'stretch', gap: spacing.md },
   row: {
     flexDirection: 'row',
     alignItems: 'center',

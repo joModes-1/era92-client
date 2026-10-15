@@ -1,11 +1,14 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { LinearGradient } from 'expo-linear-gradient';
-import { TouchableOpacity, Text, View, StyleSheet, ActivityIndicator, ViewStyle } from 'react-native';
+import { TouchableOpacity, Text, View, StyleSheet, ActivityIndicator, ViewStyle, LayoutChangeEvent } from 'react-native';
 import { colors, radii, font, spacing, weight, shadow, tracking } from '../theme';
 import Icon from './Icon';
+import { cssGradientPoints } from '../utils/cssGradient';
 
 type Variant = 'primary' | 'secondary' | 'danger' | 'ghost' | 'success' | 'dark';
 type Size = 'sm' | 'md' | 'lg' | 'action';
+
+export type GradientButtonProps = Props;
 
 type Props = {
   title: string;
@@ -18,6 +21,15 @@ type Props = {
   icon?: string;
   iconRight?: string;
   full?: boolean;
+  /** Overrides the primary variant's gradient (colors + angle) for one
+   *  call site, rather than changing what every other `action`-size button
+   *  renders. Only used when `variant` is the default 'primary'. */
+  gradientColors?: readonly string[];
+  gradientLocations?: readonly number[];
+  gradientStart?: { x: number; y: number };
+  gradientEnd?: { x: number; y: number };
+  /** CSS gradient angle (deg); converted to points for the button's real size. */
+  gradientAngle?: number;
 };
 
 const SIZES: Record<Size, { h: number; px: number; fs: number; icon: number; r?: number }> = {
@@ -42,10 +54,20 @@ function Content({ icon, iconRight, iconColor, textStyle, title, iconSize }: any
 
 export default function GradientButton({
   title, onPress, variant = 'primary', size = 'md', loading, disabled, style, icon, iconRight, full,
+  gradientColors, gradientLocations, gradientStart, gradientEnd, gradientAngle,
 }: Props) {
   const s = SIZES[size];
   const isOff = disabled || loading;
   const isAction = size === 'action';
+  // Real rendered size, so a CSS angle can be turned into the right
+  // start/end points for this box (see utils/cssGradient.ts).
+  const [box, setBox] = useState({ w: 343, h: s.h });
+  const onBoxLayout = (e: LayoutChangeEvent) => {
+    const { width, height } = e.nativeEvent.layout;
+    if (width !== box.w || height !== box.h) setBox({ w: width, h: height });
+  };
+  const angled = isAction || gradientAngle !== undefined;
+  const actionPoints = cssGradientPoints(gradientAngle ?? colors.gradientButtonAngle, box.w, box.h);
   const base: ViewStyle = {
     minHeight: s.h,
     paddingHorizontal: s.px,
@@ -120,14 +142,16 @@ export default function GradientButton({
       activeOpacity={0.88}
       style={[full && { alignSelf: 'stretch' }, !isOff && shadow.brand, isOff && styles.off, style]}
     >
-      {/* The `action` size carries the design's own navy→violet sweep at
-          its specified angle and stops; every other size keeps the
-          long-standing brand gradient. */}
+      {/* The `action` size carries the design's CSS gradient, converted to
+          points for this button's real size; every other size keeps the
+          long-standing brand gradient. A call site can still override any
+          of it (gradientColors/Locations/Start/End). */}
       <LinearGradient
-        colors={isAction ? colors.gradientAction : colors.gradient}
-        locations={isAction ? colors.gradientActionLocations : undefined}
-        start={isAction ? colors.gradientActionStart : { x: 0, y: 0 }}
-        end={isAction ? colors.gradientActionEnd : { x: 1, y: 1 }}
+        colors={(gradientColors ?? (isAction ? colors.gradientButton : colors.gradient)) as any}
+        locations={(gradientLocations ?? (isAction ? colors.gradientButtonLocations : undefined)) as any}
+        start={gradientStart ?? (angled ? actionPoints.start : { x: 0, y: 0 })}
+        end={gradientEnd ?? (angled ? actionPoints.end : { x: 1, y: 1 })}
+        onLayout={onBoxLayout}
         style={base}
       >
         {loading

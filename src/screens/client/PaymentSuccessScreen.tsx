@@ -1,6 +1,7 @@
 import React from 'react';
 import { useNavigation, useRoute } from '@react-navigation/native';
-import PaymentReceipt from '../worker/PaymentReceipt';
+import PaymentReceipt from './PaymentReceipt';
+import { markPaymentDone } from './paymentToast';
 
 /**
  * Confirms the client's declared payment intent was recorded — not that
@@ -19,26 +20,21 @@ export default function PaymentSuccessScreen() {
   const { wash, method } = route.params || {};
 
   const paymentTypeLabel =
-    method === 'mtn' ? 'MTN MoMo (pay at bay)'
-      : method === 'airtel' ? 'Airtel Money (pay at bay)'
-        : 'Cash (pay at bay)';
+    method === 'mtn' ? 'MTN MoMo'
+      : method === 'airtel' ? 'Airtel Money'
+        : 'Cash';
 
   return (
     <PaymentReceipt
       visible
-      onClose={() => navigation.popToTop()}
-      title="Payment method recorded"
-      sub="Show this at the bay. The attendant will confirm your payment and hand over your car."
-      reference={wash?.job_no || 'Pending'}
-      item={`${wash?.vehicle_class_name || 'Car'} · ${wash?.service_name || 'Wash'}`}
+      onClose={() => { markPaymentDone(); navigation.popToTop(); }}
+      reference={wash?.receipt_no || wash?.job_no || 'Pending'}
+      item={wash?.service_name || 'Wash'}
       paymentType={paymentTypeLabel}
-      recipient={wash?.branch_name || '92 CarWash'}
+      recipient={wash?.branch_name || '92 Carwash'}
       amountUgx={Number(wash?.quoted_amount_ugx || 0)}
-      // Points and an SMS confirmation are both real settlement outcomes,
-      // and settlement hasn't happened yet — showing either now would be
-      // speculative.
+      // No client points system exists yet, so there is no real number to show.
       pointsEarned={null}
-      smsSent={false}
     />
   );
 }

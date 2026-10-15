@@ -6,27 +6,17 @@ import { api } from '../../api';
 import { colors, radii, font, spacing, weight, tracking } from '../../theme';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
-  HomeTopBar, RewardsBanner, ServiceTile, ScanBar, RecentRow, PromptRow, PromoCard,
-} from '../worker/HomeParts';
-import Icon from '../../components/Icon';
-import GradientButton from '../../components/GradientButton';
+  HomeTopBar, RewardsBanner, ServiceTile, ScanBar, RecentRow, PromptRow, PromoCard, WashTracker, SuccessToast,
+} from './HomeParts';
+import { consumePaymentDone } from './paymentToast';
+import { artFor } from './serviceArt';
+import PointsSheet, { pointsForAmount } from './PointsSheet';
+import { isPaidWithPoints } from './paymentToast';
 import NotificationPrompt from '../../components/NotificationPrompt';
+import BranchPickerSheet from '../../components/BranchPickerSheet';
+import PaymentPromptSheet from './PaymentPromptSheet';
 import { useAppAlert } from '../../components/AppAlert';
 import { Surface, EmptyState, SkeletonList } from '../../components/ui';
-import { STATUS_META } from './washStatusMeta';
-
-const STAGES = [
-  { key: 'requested', label: 'Booked' },
-  { key: 'in_progress', label: 'In Progress' },
-  { key: 'ready', label: 'Finished' },
-];
-
-function stageIndex(status: string): number {
-  if (status === 'requested') return 0;
-  if (status === 'in_progress') return 1;
-  if (status === 'ready' || status === 'settled') return 2;
-  return 0;
-}
 
 /**
  * The client's home screen — an exact copy of the worker's home
@@ -63,14 +53,12 @@ const compactUgx = (n: number) => {
   return String(n);
 };
 
-function whenLabel(iso?: string) {
-  if (!iso) return 'Today';
-  const d = new Date(iso);
-  const mins = Math.floor((Date.now() - d.getTime()) / 60000);
-  if (mins < 1) return 'Just now';
-  if (mins < 60) return `${mins}m ago`;
-  if (mins < 1440) return `${Math.floor(mins / 60)}h ago`;
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+/** "May 14 at 10:20 AM", per the mockup's recent-wash rows. */
+function dateLabel(iso?: string) {
+  const d = iso ? new Date(iso) : new Date();
+  const day = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  return `${day} at ${time}`;
 }
 
 export default function ClientHome({ navigation }: any) {
@@ -81,13 +69,27 @@ export default function ClientHome({ navigation }: any) {
   const [history, setHistory] = useState<any[]>([]);
   const [loyalty, setLoyalty] = useState<any>(null);
   const [vcs, setVcs] = useState<any[]>([]);
+  // The "wash 2 cars for the price of 1" card: null until the first fetch
+  // resolves (rendered as available), then whatever the server says — the
+  // server is the only source of truth for whether the offer was grabbed.
+  const [promo, setPromo] = useState<any>(null);
+  // The nearby-branch picker behind the top-left branch row — a manual
+  // alternative to scanning the wall QR, never an automatic selection.
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
   const prevStatus = useRef<string | null>(null);
+  // Wash ids whose payment prompt was closed this session, so it pops up
+  // once per booking rather than on every 8s poll.
+  const [dismissedPrompts, setDismissedPrompts] = useState<string[]>([]);
+  const [showPaidToast, setShowPaidToast] = useState(false);
+  // Tapping the pending row reopens the payment popup even after it was closed.
+  const [forcePrompt, setForcePrompt] = useState(false);
+  const [pointsOpen, setPointsOpen] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const [pts, a, h, l, prices] = await Promise.allSettled([
+      const [pts, a, h, l, prices, promoRes] = await Promise.allSettled([
         // Worker-only endpoint (see file doc comment) — 403s for a client;
         // caught below exactly like "the scheme is off", never crashes the
         // screen. Kept as the FIRST attempt rather than skipped outright:
@@ -98,6 +100,7 @@ export default function ClientHome({ navigation }: any) {
         api.clientHistory(),
         api.clientLoyalty(),
         api.clientPrices(),
+        api.clientPromo(),
       ]);
       if (pts.status === 'fulfilled') setPoints(pts.value);
       if (a.status === 'fulfilled') setActive(a.value);
@@ -106,6 +109,7 @@ export default function ClientHome({ navigation }: any) {
       if (prices.status === 'fulfilled' && prices.value) {
         setVcs(prices.value.vehicle_classes || []);
       }
+      if (promoRes.status === 'fulfilled') setPromo(promoRes.value);
     } catch {}
   }, []);
 
@@ -113,7 +117,10 @@ export default function ClientHome({ navigation }: any) {
 
   // Refresh whenever the screen regains focus (e.g. returning from the
   // branch-scan flow), so a fresh booking shows up without a manual pull.
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  useFocusEffect(useCallback(() => {
+    load();
+    if (consumePaymentDone()) setShowPaidToast(true);
+  }, [load]));
 
   // While a wash is active, the status changes on the WORKER's phone, not
   // this one — poll so "booked" flips to "in progress" to "ready" without
@@ -132,11 +139,34 @@ export default function ClientHome({ navigation }: any) {
       if (active?.is_redemption) {
         alert('Your car is ready', 'This wash was free — nothing to pay. Just collect your car.');
       } else {
-        alert('Your car is ready', 'Tap "Pay now" below to collect it.');
+        alert('Your car is ready', 'Head to the bay to collect it.');
       }
     }
     prevStatus.current = status;
   }, [active?.status, active?.is_redemption, alert]);
+
+  // Points earned per settled wash (UI-only rule, see PointsSheet).
+  const pointsEntries = React.useMemo(() => history
+    .filter((w: any) => w.status === 'settled')
+    .map((w: any) => ({
+      id: w.id,
+      title: w.service_name || 'Wash',
+      subtitle: `Completed • ${dateLabel(w.settled_at || w.started_at)}`,
+      points: pointsForAmount(Number(w.amount_ugx ?? w.quoted_amount_ugx ?? 0)),
+    }))
+    .filter((e: any) => e.points > 0), [history]);
+  const pointsBalance = pointsEntries.reduce((sum: number, e: any) => sum + e.points, 0);
+
+  const showPaymentPrompt = !!active
+    && !active.is_redemption
+    && !isPaidWithPoints(active.id)
+    && !active.declared_payment_method
+    && Number(active.quoted_amount_ugx) > 0
+    && !dismissedPrompts.includes(active.id);
+  const dismissPrompt = () => {
+    setForcePrompt(false);
+    if (active) setDismissedPrompts((ids) => [...ids, active.id]);
+  };
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -147,17 +177,32 @@ export default function ClientHome({ navigation }: any) {
   const firstName = actor?.full_name?.split(' ')[0] || 'Customer';
 
   /** The four service tiles at the top — same derivation as the worker screen. */
+  const TILE_ORDER = ['engine', 'interior', 'heavy', 'bike'];
   const serviceTiles = React.useMemo(() => {
     const firstClass = vcs[0];
     const list = (firstClass?.services || []).filter((s: any) => s.has_price);
-    return list.slice(0, 4);
+    const rank = (name: string) => {
+      const n = (name || '').toLowerCase();
+      const i = TILE_ORDER.findIndex((k) => n.includes(k));
+      return i === -1 ? TILE_ORDER.length : i;
+    };
+    return [...list].sort((a, b) => rank(a.name) - rank(b.name)).slice(0, 4);
   }, [vcs]);
 
   /** Recent washes for the list at the bottom. */
+  // The current booking leads the list as "Pending"; everything else is
+  // history (settled or cancelled).
   const recentWashes = React.useMemo(() => {
     const done = history.filter((w: any) => !active || w.id !== active.id);
-    return done.slice(0, 4);
+    return (active ? [active, ...done] : done).slice(0, 4);
   }, [history, active]);
+
+  /** The promo card's state, from the server's own record of the offer. */
+  const promoState: 'available' | 'armed' | 'used' = promo?.used
+    ? 'used'
+    : promo && !promo.available && !promo.active_wash
+      ? 'armed'
+      : 'available';
 
   if (initialLoading) {
     return (
@@ -167,6 +212,7 @@ export default function ClientHome({ navigation }: any) {
           points={0}
           onPoints={() => navigation.navigate('Loyalty')}
           onMenu={() => navigation.openDrawer?.()}
+          onBranch={() => setPickerOpen(true)}
         />
         <ScrollView contentContainerStyle={styles.body}>
           <SkeletonList rows={4} />
@@ -182,6 +228,7 @@ export default function ClientHome({ navigation }: any) {
         points={Number(points?.points_balance || 0)}
         onPoints={() => navigation.navigate('Loyalty')}
         onMenu={() => navigation.openDrawer?.()}
+        onBranch={() => setPickerOpen(true)}
       />
 
       <ScrollView
@@ -202,96 +249,40 @@ export default function ClientHome({ navigation }: any) {
           onPress={() => navigation.navigate('Loyalty')}
         />
 
-        {/* Tapping a tile does nothing here — a client starts a wash by
-            scanning the branch's QR, not by picking a service on this
-            screen first (the worker's screen pre-fills a car-details sheet
-            here; a client has no such sheet, since booking always starts
-            with the branch scan). */}
+        {active ? <WashTracker status={active.status} /> : null}
+
+        {/* Tapping a tile jumps straight into the same branch-scan step the
+            orange bar below starts — a client still has no branch_id on
+            their own token, so the QR scan cannot be skipped, but the
+            service they tapped is carried through and pre-selected once
+            BookWashScreen loads that branch's prices, so they land on the
+            confirm step instead of picking again. */}
         <View style={styles.tileGrid}>
-          {serviceTiles.map((t: any, i: number) => (
-            <ServiceTile
-              key={t.id || i}
-              name={t.name}
-              price={t.price_ugx ? `UGX ${ugx(t.price_ugx)}` : undefined}
-              pointsBadge={i === 0 ? 'With points' : undefined}
-              onPress={() => {}}
-            />
-          ))}
+          {serviceTiles.map((t: any, i: number) => {
+            // Quick UI-only pass matching a reference mockup — the bikes
+            // tile gets a "New" badge and a short duration line, same props
+            // every other tile already supports. A real "is this new / how
+            // long does it take" data source is a later, deeper fix; this
+            // is just the visual for now.
+            const isBike = /bike/i.test(t.name || '');
+            return (
+              <ServiceTile
+                key={t.id || i}
+                name={t.name}
+                pointsBadge={i === 0 ? 'With points' : undefined}
+                badge={isBike ? 'New' : undefined}
+                badgeTone={isBike ? 'accent' : undefined}
+                meta={isBike ? '30 mins' : undefined}
+                onPress={() => navigation.navigate('BranchScan', { preselectServiceName: t.name })}
+              />
+            );
+          })}
         </View>
 
         <ScanBar
           onPress={() => navigation.navigate('BranchScan')}
           onManual={() => navigation.navigate('BranchScan')}
         />
-
-        {/* ── Active wash, tracked right here ──
-            Not part of the original worker layout (a worker's own washes
-            live in the branch queue) — this is the one addition a client
-            genuinely needs. Stays on this one screen rather than opening a
-            separate page: the same 3-stage bar (Booked / In Progress /
-            Finished) shown right after booking, updating in place as the
-            status changes. */}
-        {active && (() => {
-          const meta = STATUS_META[active.status];
-          const idx = stageIndex(active.status);
-          const isFreeWash = !!active.is_redemption;
-          return (
-            <Surface elevation="sm" padded="lg">
-              {meta ? (
-                <>
-                  <Text style={styles.activeTitle}>{meta.title}</Text>
-                  <Text style={styles.activeSub}>{meta.sub}</Text>
-                </>
-              ) : null}
-
-              <View style={styles.stageRow}>
-                {STAGES.map((stage, i) => (
-                  <React.Fragment key={stage.key}>
-                    <View style={styles.stageDotWrap}>
-                      <View style={[styles.stageDot, i <= idx && styles.stageDotFilled]}>
-                        {i < idx ? <Icon name="check" size={9} color="#fff" /> : null}
-                      </View>
-                      <Text style={[styles.stageLabel, i <= idx && styles.stageLabelActive]}>{stage.label}</Text>
-                    </View>
-                    {i < STAGES.length - 1 ? (
-                      <View style={[styles.stageBar, i < idx && styles.stageBarFilled]} />
-                    ) : null}
-                  </React.Fragment>
-                ))}
-              </View>
-
-              <View style={styles.activeCarRow}>
-                <Text style={styles.carLine} numberOfLines={1}>
-                  {active.vehicle_class_name} · {active.service_name}
-                </Text>
-                {isFreeWash ? (
-                  <Text style={[styles.carAmount, { color: colors.accent }]}>FREE</Text>
-                ) : (
-                  <Text style={styles.carAmount}>UGX {ugx(active.quoted_amount_ugx)}</Text>
-                )}
-              </View>
-
-              {active.status === 'ready' && isFreeWash ? (
-                <View style={styles.freeReady}>
-                  <Icon name="check-circle" size={13} color={colors.success} />
-                  <Text style={styles.freeReadyText}>
-                    Nothing to pay — this wash used your free credit. Just collect your car.
-                  </Text>
-                </View>
-              ) : active.status === 'ready' ? (
-                <GradientButton
-                  title="Pay now"
-                  variant="success"
-                  size="lg"
-                  icon="credit-card"
-                  full
-                  onPress={() => navigation.navigate('PaymentMethod', { wash: active })}
-                  style={{ marginTop: spacing.lg }}
-                />
-              ) : null}
-            </Surface>
-          );
-        })()}
 
         <View>
           <Text style={styles.sectionLabel}>Recent washes</Text>
@@ -305,15 +296,22 @@ export default function ClientHome({ navigation }: any) {
                 />
               </Surface>
             ) : (
-              recentWashes.map((w: any) => (
-                <RecentRow
-                  key={w.id}
-                  title={w.service_name || w.vehicle_class_name || 'Wash'}
-                  subtitle={`Completed · ${whenLabel(w.settled_at || w.started_at)}`}
-                  amount={`UGX ${ugx(w.amount_ugx ?? w.quoted_amount_ugx ?? 0)}`}
-                  tone={Number(w.amount_ugx ?? w.quoted_amount_ugx) === 0 ? 'accent' : 'brand'}
-                />
-              ))
+              recentWashes.map((w: any) => {
+                const isPending = !!active && w.id === active.id;
+                const label = isPending ? 'Pending' : w.status === 'cancelled' ? 'Cancelled' : 'Completed';
+                const amount = Number(w.amount_ugx ?? w.quoted_amount_ugx ?? 0);
+                return (
+                  <RecentRow
+                    key={w.id}
+                    image={artFor(w.service_name || '').image}
+                    title={w.service_name || w.vehicle_class_name || 'Wash'}
+                    subtitle={`${label} • ${dateLabel(w.settled_at || w.started_at || w.requested_at)}`}
+                    amount={`UGX ${compactUgx(amount).toLowerCase()}`}
+                    tone={amount === 0 ? 'accent' : 'brand'}
+                    onPress={isPending && !isPaidWithPoints(w.id) ? () => setForcePrompt(true) : undefined}
+                  />
+                );
+              })
             )}
 
             <PromptRow
@@ -329,8 +327,59 @@ export default function ClientHome({ navigation }: any) {
           </View>
         </View>
 
-        <PromoCard onPress={() => navigation.navigate('BranchScan')} />
+        {/* One-time offer. available → grab (booking flow with the offer
+            attached); armed → the next booking IS the free one; used → the
+            server has already counted this client's redemption, so the card
+            renders inert no matter what the client's device thinks. */}
+        <PromoCard
+          state={promoState}
+          onPress={() => navigation.navigate('BranchScan', {
+            usePromo: promoState === 'available',
+            usePromoFree: promoState === 'armed',
+          })}
+        />
       </ScrollView>
+
+      {/* Same hand-off as the wall-QR scan, different door: picking a
+          branch here lands on the identical BookWash screen BranchScan
+          navigates to, so there is exactly one booking flow no matter how
+          the branch was chosen. */}
+      <BranchPickerSheet
+        visible={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        onPicked={(b) => navigation.navigate('BookWash', { branchId: b.id, branchName: b.name })}
+      />
+
+      <PaymentPromptSheet
+        visible={!!active && (showPaymentPrompt || forcePrompt)}
+        wash={active}
+        onClose={dismissPrompt}
+        onDone={(method, receiptNo) => {
+          const wash = { ...active, receipt_no: receiptNo || active?.receipt_no };
+          dismissPrompt();
+          load();
+          navigation.navigate('PaymentSuccess', { wash, method });
+        }}
+      />
+
+      {showPaidToast ? (
+        <SuccessToast
+          points={null}
+          onDismiss={() => setShowPaidToast(false)}
+          onViewPoints={() => { setShowPaidToast(false); setPointsOpen(true); }}
+        />
+      ) : null}
+
+      <PointsSheet
+        visible={pointsOpen}
+        balance={pointsBalance}
+        entries={pointsEntries}
+        onClose={() => setPointsOpen(false)}
+        onRedeem={() => {
+          setPointsOpen(false);
+          navigation.navigate('BranchScan', { payWithPoints: true });
+        }}
+      />
     </SafeAreaView>
   );
 }

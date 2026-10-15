@@ -130,6 +130,9 @@ export const colors = {
   // stops.
   gradientScan: ['#AC00FF', '#FF721D'] as const,
   gradientScanLocations: [0.039, 0.771] as const,
+  // Its own direction, so retuning the action button never moves this bar.
+  gradientScanStart: { x: 0.97, y: 0.97 },
+  gradientScanEnd: { x: 0.974, y: 0.84 },
 
   // ── The rewards banner ──
   // A pale violet wash, left to right, behind the "Points by wash" strip.
@@ -144,14 +147,37 @@ export const colors = {
   promoAmount: '#FF2D6F',
   // The star roundel on the same strip.
   promoStarBg: '#9B1FE8',
-  // 99.29deg in CSS is a near-horizontal sweep tilted slightly downward.
-  // CSS measures clockwise from "up"; RN takes unit-square start/end
-  // points, so this is that angle expressed the way LinearGradient wants.
-  gradientActionStart: { x: 0.02, y: 0.12 },
-  gradientActionEnd: { x: 0.98, y: 0.88 },
-  // The colour stops sit at 3.92% and 77.06%, not 0/100 — so violet
-  // saturates before the right edge and holds flat to the corner.
-  gradientActionLocations: [0.039, 0.771] as const,
+  // Used by the summary card / service pill / manager card, which pass
+  // start/end straight to LinearGradient.
+  gradientActionStart: { x: 0.97, y: 0.97 },
+  gradientActionEnd: { x: 0.974, y: 0.84 },
+  gradientActionLocations: [0.88, 1.0] as const,
+
+  // The primary action button, from the design's CSS:
+  // `linear-gradient(204.34deg, #AC00FF 5.6%, #283B8F 35.35%)` — violet in
+  // the top-right corner, navy by 35%. Kept as a CSS angle, not points:
+  // GradientButton converts it for its real size (utils/cssGradient.ts),
+  // because points computed for a square box bend on a wide button.
+  gradientButton: ['#AC00FF', '#283B8F'] as const,
+  gradientButtonLocations: [0.056, 0.3535] as const,
+  gradientButtonAngle: 204.34,
+
+  // Button 2 ("Enter car details", "Book Service"): violet on the left
+  // sweeping to navy on the right — `linear-gradient(99.29deg, #AC00FF
+  // 3.92%, #283B8F 77.06%)`.
+  gradientButton2: ['#AC00FF', '#283B8F'] as const,
+  gradientButton2Locations: [0.0392, 0.7706] as const,
+  gradientButton2Angle: 99.29,
+
+  // The welcome screen's "CAR WASH" headline, from the design's
+  // `linear-gradient(204.34deg, #AC00FF 5.6%, #283B8F 35.35%)` — violet at
+  // top-right sweeping down into navy, holding flat past the 35% stop.
+  // Its own token rather than a reuse of gradientAction: same two colours,
+  // but the opposite direction and different stops.
+  gradientHeadline: ['#AC00FF', '#283B8F'] as const,
+  gradientHeadlineStart: { x: 0.706, y: 0.044 },
+  gradientHeadlineEnd: { x: 0.294, y: 0.956 },
+  gradientHeadlineLocations: [0.056, 0.3535] as const,
 
   // Translucent brand washes for the soft blooms on dark screens. Tokens
   // rather than inline rgba so a rebrand does not have to hunt them down —

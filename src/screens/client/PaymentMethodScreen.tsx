@@ -14,19 +14,16 @@ import GradientButton from '../../components/GradientButton';
 /**
  * "Tell us how you're paying" — the client's declared payment intent.
  *
- * Not a shared component with the worker's PaymentSheet: that one is a
- * bottom sheet a worker floats over their dashboard while physically
- * holding cash; this is a primary, full-screen destination for a client
- * tapping their own phone with no money moving yet. The visual pattern
- * (method rows, phone field for mobile money) is borrowed, not the
- * component itself.
+ * A primary, full-screen destination for a client tapping their own phone
+ * with no money moving yet — not a bottom sheet, since nothing here is
+ * happening in the middle of some other task.
  *
  * No real payment processor exists anywhere in this codebase — no MTN or
  * Airtel collection API, no webhook. This screen can only ever record a
- * declaration for the worker to confirm at the bay, never charge anyone.
- * SHOW_MOBILE_MONEY mirrors the worker screen's own flag exactly, so both
- * surfaces turn mobile money on together, from one place, once a real
- * collection integration exists — never before.
+ * declaration for the worker to confirm at the bay (the worker's own
+ * confirm button just reads whatever was declared here — see
+ * WorkerHome.tsx's confirmPayment), never charge anyone.
+ * SHOW_MOBILE_MONEY stays off until a real collection integration exists.
  */
 type PaymentMethod = 'mtn' | 'airtel' | 'cash';
 const SHOW_MOBILE_MONEY = false;
@@ -49,11 +46,11 @@ export default function PaymentMethodScreen() {
     if (!canSubmit) return;
     setSubmitting(true);
     try {
-      await api.declarePaymentIntent(wash.id, {
+      const res: any = await api.declarePaymentIntent(wash.id, {
         method,
         phone: needsPhone ? `+256${phone.replace(/\D/g, '')}` : undefined,
       });
-      navigation.replace('PaymentSuccess', { wash, method });
+      navigation.replace('PaymentSuccess', { wash: { ...wash, receipt_no: res?.receipt_no || wash?.receipt_no }, method });
     } catch (e: any) {
       alert('Could not record this', e.message);
     }

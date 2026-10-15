@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, RefreshControl, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, RefreshControl } from 'react-native';
 import { api } from '../../api';
 import { colors, radii, font, spacing, weight, tracking } from '../../theme';
 import Icon from '../../components/Icon';
@@ -22,7 +22,6 @@ export default function PlatformAdminsScreen() {
   const [admins, setAdmins] = useState<any[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [busyId, setBusyId] = useState<string | null>(null);
 
   const [createVisible, setCreateVisible] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -60,54 +59,31 @@ export default function PlatformAdminsScreen() {
       alert('Username too short', 'Use at least 3 characters.');
       return;
     }
+    // Phone is how this account signs in (phone + one-time code) — there is
+    // no password any more, so an account without one cannot be used.
+    if (phone.trim().length < 9) {
+      alert('Phone required', 'Enter a valid Ugandan mobile number — it is how this admin signs in.');
+      return;
+    }
     setCreating(true);
     try {
       const result = await api.createPlatformAdmin({
         full_name: fullName.trim(),
         username: username.trim(),
         email: email.trim(),
-        phone: phone.trim() || undefined,
+        phone: phone.trim(),
       });
       const who = fullName.trim();
       setCreateVisible(false);
       await load();
       alert(
         'Platform admin created',
-        `${who} now has full platform access.\n\nUsername: ${result.username || username.trim()}\nTemporary password: ${result.temp_password}\n\nShown only once — share it securely.`
+        `${who} now has full platform access.\n\nThey sign in with\n${result.phone_display || phone.trim()}\n\nand the one-time code sent to that phone.`
       );
     } catch (e: any) {
       alert('Error', e.message);
     }
     setCreating(false);
-  };
-
-  const doReset = (admin: any) => {
-    alert(
-      'Reset password',
-      `Reset the password for ${admin.full_name}?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Reset',
-          style: 'destructive',
-          onPress: async () => {
-            setBusyId(admin.id);
-            try {
-              const result = await api.resetPlatformAdminPassword(admin.id);
-              alert(
-                'Password reset',
-                `New temporary password for ${admin.full_name}:\n\n${result.temp_password}\n\nShown only once — share it securely.`
-              );
-              await load();
-            } catch (e: any) {
-              // Backend refuses self-reset; surface that plainly.
-              alert('Could not reset', e.message);
-            }
-            setBusyId(null);
-          },
-        },
-      ]
-    );
   };
 
   if (!loaded) {
@@ -151,7 +127,6 @@ export default function PlatformAdminsScreen() {
             <View style={{ gap: spacing.sm }}>
               {admins.map((a: any) => {
                 const isActive = a.status === 'active';
-                const busy = busyId === a.id;
                 return (
                   <Surface key={a.id} elevation="sm" style={[styles.card, !isActive && styles.cardOff]}>
                     <View style={styles.head}>
@@ -161,25 +136,14 @@ export default function PlatformAdminsScreen() {
                       <View style={styles.who}>
                         <Text style={styles.name} numberOfLines={1}>{a.full_name}</Text>
                         <Text style={styles.meta} numberOfLines={1}>
-                          {a.username ? `@${a.username}` : a.email}
+                          {a.phone || (a.username ? `@${a.username}` : a.email)}
                         </Text>
                         <Text style={styles.sub} numberOfLines={1}>{lastSeen(a.last_login_at)}</Text>
                       </View>
                       <View style={styles.badges}>
                         <Badge label={isActive ? 'Active' : 'Suspended'} tone={isActive ? 'success' : 'error'} dot small />
-                        {a.must_change_password ? <Badge label="Pending setup" tone="warning" small /> : null}
                       </View>
                     </View>
-
-                    <TouchableOpacity
-                      style={styles.actionBtn}
-                      disabled={busy}
-                      onPress={() => doReset(a)}
-                      activeOpacity={0.6}
-                    >
-                      <Icon name="key" size={11} color={colors.textSecondary} />
-                      <Text style={styles.actionText}>Reset password</Text>
-                    </TouchableOpacity>
                   </Surface>
                 );
               })}
@@ -220,10 +184,12 @@ export default function PlatformAdminsScreen() {
         />
         <Field
           label="Phone"
+          required
           value={phone}
           onChangeText={setPhone}
           placeholder="+256700000000"
           keyboardType="phone-pad"
+          hint="How they sign in — they receive a one-time code on this number. No password."
           style={{ marginBottom: 0 }}
         />
       </FormSheet>
@@ -254,11 +220,4 @@ const styles = StyleSheet.create({
   meta: { fontSize: font.xs, color: colors.textSecondary },
   sub: { fontSize: font.micro, color: colors.textMuted },
   badges: { alignItems: 'flex-end', gap: 4 },
-
-  actionBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-    paddingTop: spacing.md,
-    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.borderLight,
-  },
-  actionText: { fontSize: font.sm, fontWeight: weight.bold, color: colors.textSecondary },
 });

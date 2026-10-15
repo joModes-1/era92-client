@@ -50,7 +50,7 @@ export default function LoyaltyScreen() {
               <Text style={styles.cardValue}>{credits}</Text>
               <Text style={styles.cardSub}>
                 {credits > 0
-                  ? `Saved and ready. Ask the attendant to use ${credits === 1 ? 'it' : 'one'} on your next visit.`
+                  ? `Saved and ready — book your next wash and choose to use ${credits === 1 ? 'it' : 'one'} at checkout.`
                   : 'Keep washing to unlock your next free one.'}
               </Text>
 
@@ -88,7 +88,7 @@ export default function LoyaltyScreen() {
               />
               <Text style={styles.progressNote}>
                 {remaining === 0
-                  ? 'You have earned a free wash — ask the attendant to use it.'
+                  ? 'You have earned a free wash — book your next wash and choose to use it.'
                   : `${remaining} more ${remaining === 1 ? 'wash' : 'washes'} to go.`}
               </Text>
             </Surface>

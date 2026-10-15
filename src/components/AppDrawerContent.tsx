@@ -43,7 +43,6 @@ const ROUTE_ICON: Record<string, string> = {
   'History': 'history',
   'Loyalty': 'star',
   'Ledger': 'list-alt',
-  'My Code': 'qrcode',
   'Profile': 'user-circle',
   'Report a problem': 'life-ring',
   'Home': 'home',
@@ -66,7 +65,7 @@ const GROUPS: { title: string; routes: string[] }[] = [
   { title: 'Today', routes: ['Shift & Queue', 'Active Wash', 'Home', 'Overview', 'Cash Handover', 'Daily Report'] },
   { title: 'Reports', routes: ['Performance', 'Cash Variance', 'Stale Alerts', 'Exceptions', 'Handovers', 'Cancellations', 'History', 'Ledger', 'Audit Log'] },
   { title: 'Manage', routes: ['Staff', 'Branches', 'Catalogue', 'Prices', 'Loyalty Settings', 'Customers', 'Organizations', 'Billing', 'Platform Admins'] },
-  { title: 'You', routes: ['Loyalty', 'My Code', 'Report a problem', 'Profile'] },
+  { title: 'You', routes: ['Loyalty', 'Report a problem', 'Profile'] },
 ];
 
 export default function AppDrawerContent(props: DrawerContentComponentProps) {

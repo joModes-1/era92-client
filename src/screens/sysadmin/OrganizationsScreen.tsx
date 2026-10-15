@@ -49,11 +49,13 @@ export default function OrganizationsScreen() {
   const [phone, setPhone] = useState('');
   const [adminName, setAdminName] = useState('');
   const [adminEmail, setAdminEmail] = useState('');
+  const [adminPhone, setAdminPhone] = useState('');
 
   // Add-admin-to-existing-org form
   const [adminTarget, setAdminTarget] = useState<any>(null);
   const [newAdminName, setNewAdminName] = useState('');
   const [newAdminEmail, setNewAdminEmail] = useState('');
+  const [newAdminPhone, setNewAdminPhone] = useState('');
   const [addingAdmin, setAddingAdmin] = useState(false);
 
   const load = useCallback(async () => {
@@ -74,7 +76,7 @@ export default function OrganizationsScreen() {
   const openCreate = () => {
     setName(''); setSlug(''); setSlugTouched(false);
     setContactName(''); setPhone('');
-    setAdminName(''); setAdminEmail('');
+    setAdminName(''); setAdminEmail(''); setAdminPhone('');
     setCreateVisible(true);
   };
 
@@ -92,6 +94,11 @@ export default function OrganizationsScreen() {
       alert('Missing admin', 'The first org admin needs a name and email.');
       return;
     }
+    // Phone is the admin's sign-in identity now — no password is generated.
+    if (adminPhone.trim().length < 9) {
+      alert('Admin phone required', 'The first org admin signs in with phone + one-time code, so a valid number is required.');
+      return;
+    }
     setCreating(true);
     try {
       const result = await api.createOrg({
@@ -101,13 +108,13 @@ export default function OrganizationsScreen() {
         contact_name: contactName.trim() || undefined,
         admin_name: adminName.trim(),
         admin_email: adminEmail.trim(),
+        admin_phone: adminPhone.trim(),
       });
       setCreateVisible(false);
       await load();
-      // Temp password is shown exactly once — make that unmissable.
       alert(
         'Organization created',
-        `${name.trim()} is live.\n\nIts admin signs in with:\nUsername: ${adminEmail.trim().split('@')[0]}\nTemporary password: ${result.temp_password}\n\nThis password is shown only once — share it securely.`
+        `${name.trim()} is live.\n\nIts admin signs in with\n${result.admin_phone_display || adminPhone.trim()}\n\nand the one-time code sent to that phone.`
       );
     } catch (e: any) {
       alert('Error', e.message);
@@ -119,6 +126,7 @@ export default function OrganizationsScreen() {
     setAdminTarget(org);
     setNewAdminName('');
     setNewAdminEmail('');
+    setNewAdminPhone('');
   };
 
   const submitAddAdmin = async () => {
@@ -126,18 +134,23 @@ export default function OrganizationsScreen() {
       alert('Missing details', 'Name and email are required.');
       return;
     }
+    if (newAdminPhone.trim().length < 9) {
+      alert('Phone required', 'This admin signs in with phone + one-time code, so a valid number is required.');
+      return;
+    }
     setAddingAdmin(true);
     try {
       const result = await api.addOrgAdmin(adminTarget.id, {
         full_name: newAdminName.trim(),
         email: newAdminEmail.trim(),
+        phone: newAdminPhone.trim(),
       });
       const orgName = adminTarget.name;
       setAdminTarget(null);
       await load();
       alert(
         'Org admin added',
-        `${newAdminName.trim()} can now administer ${orgName}.\n\nUsername: ${newAdminEmail.trim().split('@')[0]}\nTemporary password: ${result.temp_password}\n\nShown only once — share it securely.`
+        `${newAdminName.trim()} can now administer ${orgName}.\n\nThey sign in with\n${result.phone_display || newAdminPhone.trim()}\n\nand the one-time code sent to that phone.`
       );
     } catch (e: any) {
       alert('Error', e.message);
@@ -380,11 +393,16 @@ export default function OrganizationsScreen() {
           placeholder="jane@shinemotors.com"
           autoCapitalize="none"
           keyboardType="email-address"
-          hint={
-            adminEmail.includes('@')
-              ? `They will sign in with username "${adminEmail.split('@')[0]}".`
-              : 'Their username is the part before the @.'
-          }
+          hint="Contact address only — they sign in with the phone number below."
+        />
+        <Field
+          label="Admin phone"
+          required
+          value={adminPhone}
+          onChangeText={setAdminPhone}
+          placeholder="+256700000000"
+          keyboardType="phone-pad"
+          hint="How they sign in — they receive a one-time code on this number."
           style={{ marginBottom: 0 }}
         />
       </FormSheet>
@@ -408,11 +426,16 @@ export default function OrganizationsScreen() {
           placeholder="jane@example.com"
           autoCapitalize="none"
           keyboardType="email-address"
-          hint={
-            newAdminEmail.includes('@')
-              ? `Username will be "${newAdminEmail.split('@')[0]}".`
-              : 'Username is the part before the @.'
-          }
+          hint="Contact address only — they sign in with the phone number below."
+        />
+        <Field
+          label="Phone"
+          required
+          value={newAdminPhone}
+          onChangeText={setNewAdminPhone}
+          placeholder="+256700000000"
+          keyboardType="phone-pad"
+          hint="How they sign in — they receive a one-time code on this number."
           style={{ marginBottom: 0 }}
         />
       </FormSheet>

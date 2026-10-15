@@ -189,11 +189,11 @@ export default function ReportIssueScreen() {
 
   const submitTriage = async () => {
     if (!triageTarget) return;
-    // Closing something with no explanation leaves the reporter — who gets
-    // emailed this — none the wiser about what actually happened.
+    // Closing something with no explanation leaves the reporter none the
+    // wiser about what actually happened — this text is all they get.
     const closing = triageStatus === 'resolved' || triageStatus === 'closed';
     if (closing && resolution.trim().length < 3) {
-      alert('Say what was done', 'The person who reported this is told how it was resolved.');
+      alert('Say what was done', 'This is what the person who reported it will see.');
       return;
     }
     if (escalate && escalationNote.trim().length < 3) {
@@ -203,7 +203,7 @@ export default function ReportIssueScreen() {
 
     setSavingTriage(true);
     try {
-      const res = await api.updateIssue(triageTarget.id, {
+      await api.updateIssue(triageTarget.id, {
         status: triageStatus as any,
         resolution: resolution.trim() || undefined,
         escalate: escalate || undefined,
@@ -217,9 +217,7 @@ export default function ReportIssueScreen() {
       } else if (closing) {
         alert(
           'Report closed',
-          res?.reporter_notified
-            ? 'The person who reported it has been emailed the outcome.'
-            : 'Saved. They will see the outcome next time they open the app.'
+          'Saved. Whoever reported it will see the outcome on their Reports screen.'
         );
       }
     } catch (e: any) {
@@ -345,27 +343,7 @@ export default function ReportIssueScreen() {
                         <Icon name="check" size={10} color={colors.success} />
                         <View style={{ flex: 1 }}>
                           <Text style={styles.resolutionText}>{item.resolution}</Text>
-                          {/* A resolution the reporter never received is only
-                              half done — say so rather than implying they know. */}
-                          {canTriage && done && item.reporter_email ? (
-                            <Text style={styles.notifyNote}>
-                              {item.resolved_notified_at
-                                ? 'Reporter was emailed'
-                                : 'Reporter was NOT emailed — tell them directly'}
-                            </Text>
-                          ) : null}
                         </View>
-                      </View>
-                    ) : null}
-
-                    {/* A report that never reached support is worse than one
-                        that was never filed — the user thinks it was sent. */}
-                    {isSysadmin && item.email_error ? (
-                      <View style={styles.mailWarn}>
-                        <Icon name="exclamation-triangle" size={10} color={colors.warning} />
-                        <Text style={styles.mailWarnText} numberOfLines={2}>
-                          Email notification failed — saved here only.
-                        </Text>
                       </View>
                     ) : null}
                   </Surface>
@@ -380,8 +358,8 @@ export default function ReportIssueScreen() {
             <Icon name="info-circle" size={11} color={colors.textMuted} />
             <Text style={styles.hintText}>
               {isOrgAdmin
-                ? 'Tap a report to work on it. Fix what you can and record how — the reporter is emailed. Anything that needs the software changed, send to the platform team.'
-                : 'Tap a report to mark it as being looked at, or record how it was fixed. The reporter is emailed the outcome.'}
+                ? 'Tap a report to work on it. Fix what you can and record how — whoever reported it sees the outcome on their own Reports screen. Anything that needs the software changed, send to the platform team.'
+                : 'Tap a report to mark it as being looked at, or record how it was fixed. Whoever reported it sees the outcome in the app.'}
             </Text>
           </View>
         )}
@@ -476,7 +454,7 @@ export default function ReportIssueScreen() {
           onChangeText={setResolution}
           placeholder="e.g. Corrected the price at your branch"
           multiline
-          hint="Emailed to whoever reported it."
+          hint="Shown to whoever reported it on their Reports screen."
           style={{ marginBottom: isOrgAdmin ? spacing.lg : 0 }}
         />
 
@@ -551,8 +529,6 @@ const styles = StyleSheet.create({
   },
   escalationText: { flex: 1, fontSize: font.xs, color: colors.accent, fontWeight: weight.semibold, lineHeight: 16 },
 
-  notifyNote: { fontSize: font.micro, color: colors.textMuted, marginTop: 3 },
-
   escalateToggle: {
     flexDirection: 'row', alignItems: 'center', gap: 9,
     paddingVertical: spacing.md, paddingHorizontal: spacing.md,
@@ -570,9 +546,6 @@ const styles = StyleSheet.create({
     paddingVertical: 8, paddingHorizontal: spacing.md,
   },
   resolutionText: { flex: 1, fontSize: font.xs, color: colors.success, fontWeight: weight.semibold, lineHeight: 16 },
-
-  mailWarn: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  mailWarnText: { flex: 1, fontSize: font.micro, color: colors.warning, fontWeight: weight.semibold },
 
   triageQuote: { gap: 4, marginBottom: spacing.lg },
   triageSubject: { fontSize: font.sm, fontWeight: weight.heavy, color: colors.text },

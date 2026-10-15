@@ -14,7 +14,7 @@ import { AlertHost } from '../AppAlert';
  * plain forms are always missing.
  */
 export function Field({
-  label, hint, error, required, prefix, style, secureTextEntry, ...props
+  label, hint, error, required, prefix, style, ...props
 }: TextInputProps & {
   label: string;
   hint?: string;
@@ -23,14 +23,6 @@ export function Field({
   prefix?: string;
 }) {
   const [focused, setFocused] = useState(false);
-  // Every password field in the app went through this component with
-  // secureTextEntry hardcoded true and no way to reveal it — Register,
-  // Forgot Password and Change Password all had this gap (Login had its own
-  // hand-rolled toggle instead of using Field at all). Owning the reveal
-  // state here fixes every one of them at once, with no change needed at
-  // any call site.
-  const [revealed, setRevealed] = useState(false);
-  const isPassword = !!secureTextEntry;
 
   return (
     <View style={styles.field}>
@@ -51,21 +43,10 @@ export function Field({
         <TextInput
           placeholderTextColor={colors.textMuted}
           {...props}
-          secureTextEntry={isPassword && !revealed}
           onFocus={(e) => { setFocused(true); props.onFocus?.(e); }}
           onBlur={(e) => { setFocused(false); props.onBlur?.(e); }}
           style={[styles.input, props.multiline && styles.inputMultiline, style]}
         />
-        {isPassword ? (
-          <TouchableOpacity
-            onPress={() => setRevealed((r) => !r)}
-            hitSlop={10}
-            style={styles.revealBtn}
-            accessibilityLabel={revealed ? 'Hide password' : 'Show password'}
-          >
-            <Icon name={revealed ? 'eye-slash' : 'eye'} size={15} color={colors.textMuted} />
-          </TouchableOpacity>
-        ) : null}
       </View>
 
       {error ? (
@@ -239,7 +220,6 @@ const styles = StyleSheet.create({
   prefix: { fontSize: font.regular, fontWeight: weight.heavy, color: colors.textMuted },
   input: { flex: 1, paddingVertical: 13, fontSize: font.regular, color: colors.text, fontWeight: weight.medium, ...noFocusRing },
   inputMultiline: { minHeight: 74, textAlignVertical: 'top' },
-  revealBtn: { padding: 2 },
   hint: { fontSize: font.xs, color: colors.textMuted },
   error: { fontSize: font.xs, color: colors.error, fontWeight: weight.semibold },
 

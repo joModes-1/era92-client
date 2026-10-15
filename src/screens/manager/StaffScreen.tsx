@@ -8,7 +8,7 @@ import { api } from '../../api';
 import { colors, radii, font, spacing, weight, tracking, Tone } from '../../theme';
 import Badge from '../../components/Badge';
 import AppTopBar from '../../components/AppTopBar';
-import GradientButton from '../../components/GradientButton';
+import ComponentButton1 from '../../components/buttons/ComponentButton1';
 import Icon from '../../components/Icon';
 import { useAppAlert } from '../../components/AppAlert';
 import {
@@ -185,12 +185,10 @@ export default function StaffScreen() {
           <Text style={styles.subtitle}>{activeCount} active of {staff.length}</Text>
         </View>
 
-        <GradientButton
+        <ComponentButton1
           title="Add staff member"
           onPress={openCreate}
           icon="plus"
-          size="action"
-          full
         />
 
         {staff.length === 0 ? (

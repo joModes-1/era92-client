@@ -57,7 +57,6 @@ import ClientHome from './src/screens/client/ClientHome';
 import HistoryScreen from './src/screens/client/HistoryScreen';
 import LoyaltyScreen from './src/screens/client/LoyaltyScreen';
 import LedgerScreen from './src/screens/client/LedgerScreen';
-import MyCodeScreen from './src/screens/client/MyCodeScreen';
 import BranchScanScreen from './src/screens/client/BranchScanScreen';
 import BookWashScreen from './src/screens/client/BookWashScreen';
 import PaymentMethodScreen from './src/screens/client/PaymentMethodScreen';
@@ -78,7 +77,7 @@ const drawerScreenOptions = {
 function WorkerDrawer() {
   return (
     <Drawer.Navigator screenOptions={drawerScreenOptions} drawerContent={(p) => <AppDrawerContent {...p} />}>
-      <Drawer.Screen name="Shift & Queue" component={WorkerHome} />
+      <Drawer.Screen name="Current Car" component={WorkerHome} />
       <Drawer.Screen name="Report a problem" component={ReportIssueScreen} />
       <Drawer.Screen name="Profile" component={ProfileScreen} />
     </Drawer.Navigator>
@@ -153,7 +152,6 @@ function ClientDrawer() {
       <Drawer.Screen name="History" component={HistoryScreen} />
       <Drawer.Screen name="Loyalty" component={LoyaltyScreen} />
       <Drawer.Screen name="Ledger" component={LedgerScreen} />
-      <Drawer.Screen name="My Code" component={MyCodeScreen} />
       <Drawer.Screen name="Report a problem" component={ReportIssueScreen} />
       <Drawer.Screen name="Profile" component={ProfileScreen} />
     </Drawer.Navigator>
@@ -231,8 +229,7 @@ function RootNavigator() {
           {/* Scanning the branch's wall QR — matches ScannerSheet's own
               full-bleed dark UI, so it isn't boxed into a smaller card. */}
           <Stack.Screen name="BranchScan" component={BranchScanScreen} options={{ presentation: 'fullScreenModal' }} />
-          {/* Same weight as the worker's own StartWashFlow, which this
-              mirrors — a full-screen multi-field form, not a light sheet. */}
+          {/* A full-screen multi-field form, not a light sheet. */}
           <Stack.Screen name="BookWash" component={BookWashScreen} options={{ presentation: 'fullScreenModal' }} />
           {/* No separate progress screen — the 3-stage tracker lives on
               ClientHome itself now, so booking pops straight back there. */}

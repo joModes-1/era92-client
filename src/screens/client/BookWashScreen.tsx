@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput,
-  ScrollView, Platform, KeyboardAvoidingView, Image,
+  ScrollView, Platform, KeyboardAvoidingView, Image, ActivityIndicator,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -10,21 +10,18 @@ import { api } from '../../api';
 import { useAppAlert } from '../../components/AppAlert';
 import { colors, radii, font, spacing, weight, tracking, noFocusRing, shadow } from '../../theme';
 import Icon from '../../components/Icon';
-import GradientButton from '../../components/GradientButton';
-import { artFor } from '../worker/serviceArt';
+import ComponentButton1 from '../../components/buttons/ComponentButton1';
+import ComponentButton2 from '../../components/buttons/ComponentButton2';
+import { artFor } from './serviceArt';
+import { pointsForAmount } from './PointsSheet';
+import { markPaidWithPoints } from './paymentToast';
 
 /**
- * The client's own "pick a service, describe the car, confirm" flow.
- *
- * A fork of the worker's StartWashFlow, not a shared component: that one
- * carries linkedToCustomer/pointsPerWash props that describe a WORKER
- * starting a wash FOR someone who may or may not be linked — meaningless
- * here, since a client booking is always for themselves. It also sources
- * prices from the worker's own shift-branch; a client has no branch_id on
- * their token and has to fetch prices for whichever branch they just
- * scanned. And it's a Modal driven by a parent's local state, whereas this
- * is a pushed screen driven by navigation params — different enough wiring
- * that sharing one component would need a pile of mode-switching props.
+ * The client's own "pick a service, describe the car, confirm" flow —
+ * reached after scanning a branch's QR (BranchScanScreen), which is where
+ * branchId comes from. A client has no branch_id on their own token, so
+ * prices are fetched for whichever branch was just scanned, not derived
+ * from the caller's own account.
  */
 
 const COLORS = [
@@ -40,7 +37,13 @@ export default function BookWashScreen() {
   const alert = useAppAlert();
   const insets = useSafeAreaInsets();
 
-  const { branchId, branchName, useFreeWash } = route.params || {};
+  // useFreeWash arrives from LoyaltyScreen's redeem button. usePromo / usePromoFree
+  // arrive from the home screen's promo card: grabbing the offer (the paid
+  // first wash) and spending the armed reward (the free next wash).
+  // preselectServiceName arrives from tapping a service tile directly on the
+  // home screen — it names a service, not a vehicle class, so once prices
+  // load below we find whichever vehicle class actually offers it.
+  const { branchId, branchName, useFreeWash, usePromo, usePromoFree, preselectServiceName, payWithPoints } = route.params || {};
 
   const [step, setStep] = useState<Step>('details');
   const [vehicleClasses, setVehicleClasses] = useState<any[]>([]);
@@ -60,6 +63,20 @@ export default function BookWashScreen() {
         const data = await api.clientPricesForBranch(branchId);
         const vcs = data?.vehicle_classes || [];
         setVehicleClasses(vcs);
+
+        if (preselectServiceName) {
+          const match = vcs.find((v: any) =>
+            (v.services || []).some((s: any) => s.has_price && s.name === preselectServiceName)
+          );
+          if (match) {
+            setVcId(match.id);
+            const svc = match.services.find((s: any) => s.name === preselectServiceName);
+            setSvcId(svc.id);
+            setLoading(false);
+            return;
+          }
+        }
+
         setVcId(vcs[0]?.id || '');
       } catch (e: any) {
         alert('Could not load prices', e.message);
@@ -88,14 +105,17 @@ export default function BookWashScreen() {
   const submit = async () => {
     setSubmitting(true);
     try {
-      const res = await api.clientBookWash({
+      const booked: any = await api.clientBookWash({
         branch_id: branchId,
         vehicle_class_id: vcId,
         service_id: svcId,
         plate: plate.trim() || undefined,
         vehicle_color: color || undefined,
         use_free_wash: useFreeWash || undefined,
+        use_promo: usePromo || undefined,
+        use_promo_free: usePromoFree || undefined,
       });
+      if (payWithPoints && booked?.wash_id) markPaidWithPoints(booked.wash_id);
       // The progress tracker lives on the home screen itself now, not a
       // separate page — popToTop() dismisses this whole modal stack
       // (BranchScan + BookWash) back to the drawer, where ClientHome's own
@@ -110,6 +130,15 @@ export default function BookWashScreen() {
           'No free wash available',
           'This credit is no longer available. You can still book and pay normally.'
         );
+      } else if (/PROMO_UNAVAILABLE/i.test(String(e?.message || e?.code || ''))) {
+        // The armed reward was spent or unwound before this booking landed.
+        alert(
+          'Promo not available',
+          'Your free promo wash is no longer available. You can still book and pay normally.'
+        );
+      } else if (/PROMO_CONFLICT/i.test(String(e?.message || e?.code || ''))) {
+        // Offer already grabbed/used — book again without it.
+        alert('Offer already used', 'This promo has already been claimed on your account. You can still book and pay normally.');
       } else {
         alert('Could not book this wash', e.message);
       }
@@ -135,6 +164,19 @@ export default function BookWashScreen() {
     );
   }
 
+  // Shown while the booking request is in flight, between tapping "Book
+  // this wash" and either landing back on the home screen or seeing an
+  // error alert — the confirm step's own inline button spinner is easy to
+  // miss on a slow connection, so this full-screen interstitial (matching
+  // the Figma loading frame) makes the wait unambiguous.
+  if (submitting) {
+    return (
+      <View style={s.loadingRoot}>
+        <ActivityIndicator size="large" color="#AC00FF" />
+      </View>
+    );
+  }
+
   if (step === 'confirm') {
     return (
       <View style={s.root}>
@@ -143,7 +185,15 @@ export default function BookWashScreen() {
         <ScrollView contentContainerStyle={s.body} showsVerticalScrollIndicator={false}>
           <View style={s.heroArt}>
             {art.image ? (
-              <Image source={art.image} style={s.heroArtImage} resizeMode="contain" />
+              <Image
+                source={art.image}
+                style={[
+                  s.heroArtImage,
+                  art.flip && { transform: [{ scaleX: -1 }] },
+                  art.offsetY ? { marginTop: art.offsetY } : null,
+                ]}
+                resizeMode="contain"
+              />
             ) : (
               <Icon name={art.icon} size={62} color={colors.ink[400]} />
             )}
@@ -162,7 +212,24 @@ export default function BookWashScreen() {
             <View style={s.summaryRows}>
               <SummaryRow label="Car plate" value={plate || 'Not given'} />
               <SummaryRow label="Color" value={color || 'Not given'} />
-              {useFreeWash ? (
+              {payWithPoints ? (
+                <View style={s.freeRow}>
+                  <Icon name="award" size={13} color="#fff" />
+                  <Text style={s.freeText}>
+                    Paying with points — {pointsForAmount(Number(service?.price_ugx || 0)).toLocaleString()} points
+                  </Text>
+                </View>
+              ) : usePromo ? (
+                <View style={s.freeRow}>
+                  <Icon name="gift" size={13} color="#fff" />
+                  <Text style={s.freeText}>2-for-1 offer — pay for this wash, your next one is FREE</Text>
+                </View>
+              ) : usePromoFree ? (
+                <View style={s.freeRow}>
+                  <Icon name="gift" size={13} color="#fff" />
+                  <Text style={s.freeText}>FREE — your 2-for-1 promo reward</Text>
+                </View>
+              ) : useFreeWash ? (
                 <View style={s.freeRow}>
                   <Icon name="gift" size={13} color="#fff" />
                   <Text style={s.freeText}>FREE — using your saved wash</Text>
@@ -178,13 +245,7 @@ export default function BookWashScreen() {
         </ScrollView>
 
         <View style={[s.footer, { paddingBottom: insets.bottom + spacing.lg }]}>
-          <GradientButton
-            title="Book this wash"
-            onPress={submit}
-            loading={submitting}
-            size="action"
-            full
-          />
+          <ComponentButton2 title="Book Service" onPress={submit} loading={submitting} />
         </View>
       </View>
     );
@@ -214,7 +275,11 @@ export default function BookWashScreen() {
             >
               <View style={s.serviceArt}>
                 {art.image ? (
-                  <Image source={art.image} style={s.serviceArtImage} resizeMode="contain" />
+                  <Image
+                    source={art.image}
+                    style={[s.serviceArtImage, art.flip && { transform: [{ scaleX: -1 }] }]}
+                    resizeMode="contain"
+                  />
                 ) : (
                   <Icon name={art.icon} size={20} color="#fff" />
                 )}
@@ -306,13 +371,7 @@ export default function BookWashScreen() {
         </ScrollView>
 
         <View style={[s.footer, { paddingBottom: insets.bottom + spacing.lg }]}>
-          <GradientButton
-            title="Continue"
-            onPress={() => setStep('confirm')}
-            disabled={!canContinue}
-            size="action"
-            full
-          />
+          <ComponentButton1 title="Continue" onPress={() => setStep('confirm')} disabled={!canContinue} />
         </View>
       </KeyboardAvoidingView>
     </View>
@@ -330,6 +389,8 @@ function SummaryRow({ label, value }: { label: string; value: string }) {
 
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bgCard },
+
+  loadingRoot: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#ECEFF4' },
 
   header: {
     flexDirection: 'row',
