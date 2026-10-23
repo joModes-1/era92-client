@@ -34,7 +34,8 @@ export default function PaymentPromptSheet({
     if (visible) { setStep('prompt'); setError(''); }
   }, [visible]);
 
-  const amount = Number(wash?.quoted_amount_ugx || 0).toLocaleString();
+  // What is still owed after any points spent at booking.
+  const amount = Number(wash?.amount_due_ugx ?? wash?.quoted_amount_ugx ?? 0).toLocaleString();
   const needsPhone = method !== 'cash';
   const canPay = !needsPhone || phone.replace(/\D/g, '').length >= 9;
 

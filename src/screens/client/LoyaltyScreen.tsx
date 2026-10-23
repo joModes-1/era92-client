@@ -6,36 +6,50 @@ import { api } from '../../api';
 import { colors, radii, font, spacing, weight, tracking, shadow } from '../../theme';
 import { ReportScreen } from './reportHelpers';
 import Icon from '../../components/Icon';
-import { Surface, EmptyState, ProgressBar, StampRow, MetricStrip } from '../../components/ui';
+import { Surface, EmptyState, MetricStrip } from '../../components/ui';
 
+/**
+ * The client's rewards: their points (the scheme the owner configures in
+ * Settings — points per wash type, and what a point is worth), with a
+ * Redeem button that books a wash paid with points.
+ *
+ * Points replaced the old "7 washes = 1 free" stamp card. Free-wash credits a
+ * client earned under that card can still be spent, so they are shown — with
+ * their own Redeem button — only while the client still has some.
+ */
 export default function LoyaltyScreen() {
   const navigation = useNavigation<any>();
 
   return (
     <ReportScreen
       title="Loyalty"
-      subtitle="Your rewards"
-      load={() => api.clientLoyalty()}
+      subtitle="Your points"
+      load={async () => {
+        const [points, legacy] = await Promise.all([
+          api.clientPoints(),
+          api.clientLoyalty().catch(() => null),
+        ]);
+        return { points, legacy };
+      }}
       render={(data) => {
         if (data?.error) return null;
-        if (!data) {
+        const p = data?.points;
+        if (!p) {
           return (
             <Surface elevation="sm" padded="lg">
-              <EmptyState icon="gift" title="No loyalty activity yet" message="Get your first wash to start earning rewards." />
+              <EmptyState icon="gift" title="No points yet" message="Get your first wash to start earning points." />
             </Surface>
           );
         }
 
-        const credits = Number(data.free_wash_credits || 0);
-        const done = Number(data.wash_count || 0);
-        const required = Number(data.washes_required || 7);
-        const remaining = Math.max(0, required - done);
+        const balance = Number(p.balance || 0);
+        const worth = Number(p.worth_ugx || 0);
+        const credits = Number(data?.legacy?.free_wash_credits || 0);
 
         return (
           <View style={{ gap: spacing.lg }}>
-            {/* Reward card — reads as something you own, not a stat box */}
             <LinearGradient
-              colors={credits > 0 ? [colors.accent, colors.primary] : [colors.ink[800], colors.ink[900]]}
+              colors={balance > 0 ? [colors.accent, colors.primary] : [colors.ink[800], colors.ink[900]]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
               style={styles.card}
@@ -43,85 +57,64 @@ export default function LoyaltyScreen() {
               <View style={styles.bloom} pointerEvents="none" />
 
               <View style={styles.cardTop}>
-                <Text style={styles.cardKicker}>FREE WASH CREDITS</Text>
-                <Icon name="gift" size={16} color="rgba(255,255,255,0.8)" />
+                <Text style={styles.cardKicker}>YOUR POINTS</Text>
+                <Icon name="award" size={16} color="rgba(255,255,255,0.8)" />
               </View>
 
-              <Text style={styles.cardValue}>{credits}</Text>
+              <Text style={styles.cardValue}>{balance.toLocaleString()}</Text>
               <Text style={styles.cardSub}>
-                {credits > 0
-                  ? `Saved and ready — book your next wash and choose to use ${credits === 1 ? 'it' : 'one'} at checkout.`
-                  : 'Keep washing to unlock your next free one.'}
+                {!p.enabled
+                  ? 'Points are paused at this car wash for now.'
+                  : balance > 0
+                    ? `Worth UGX ${worth.toLocaleString()} off your next wash (1 point = UGX ${Number(p.point_value_ugx || 0).toLocaleString()}).`
+                    : 'Earn points on every wash — then use them to pay.'}
               </Text>
 
-              {/* Punch card sits on the reward itself */}
-              <View style={styles.cardStamps}>
-                <StampRowLight filled={done} total={required} />
-              </View>
-
               {/* A plain light pill rather than GradientButton — its own
-                  gradient would clash with the card's, which already carries
-                  the visual weight here. */}
-              {credits > 0 && (
+                  gradient would clash with the card's. */}
+              {p.enabled && balance > 0 && Number(p.point_value_ugx) > 0 && (
                 <Surface
                   elevation="none"
                   borderless
-                  onPress={() => navigation.navigate('BranchScan', { useFreeWash: true })}
+                  onPress={() => navigation.navigate('BranchScan', { payWithPoints: true })}
                   style={styles.redeemBtn}
                 >
-                  <Icon name="gift" size={13} color={colors.primary} />
-                  <Text style={styles.redeemText}>
-                    {credits > 1 ? 'Redeem a free wash' : 'Redeem your free wash'}
-                  </Text>
+                  <Icon name="award" size={13} color={colors.primary} />
+                  <Text style={styles.redeemText}>Redeem points on a wash</Text>
                 </Surface>
               )}
             </LinearGradient>
 
-            {/* Progress */}
-            <Surface elevation="sm" style={{ gap: spacing.md }}>
-              <ProgressBar
-                value={done}
-                max={required}
-                label="PROGRESS TO NEXT FREE WASH"
-                caption={`${done} / ${required}`}
-                height={9}
-              />
-              <Text style={styles.progressNote}>
-                {remaining === 0
-                  ? 'You have earned a free wash — book your next wash and choose to use it.'
-                  : `${remaining} more ${remaining === 1 ? 'wash' : 'washes'} to go.`}
-              </Text>
-            </Surface>
-
-            {/* Lifetime figures */}
             <Surface elevation="sm">
               <MetricStrip
                 items={[
-                  { label: 'Lifetime washes', value: Number(data.lifetime_washes || 0), tone: 'primary' },
-                  { label: 'Rewards redeemed', value: Number(data.lifetime_redeemed || 0), tone: 'accent' },
+                  { label: 'Points earned', value: Number(p.lifetime_earned || 0), tone: 'primary' },
+                  { label: 'Points used', value: Number(p.lifetime_redeemed || 0), tone: 'accent' },
                 ]}
               />
             </Surface>
+
+            {credits > 0 ? (
+              <Surface elevation="sm" style={{ gap: spacing.sm }}>
+                <Text style={styles.creditTitle}>
+                  {credits} free {credits === 1 ? 'wash' : 'washes'} saved
+                </Text>
+                <Text style={styles.creditNote}>From the old stamp card — still yours to use.</Text>
+                <Surface
+                  elevation="none"
+                  borderless
+                  onPress={() => navigation.navigate('BranchScan', { useFreeWash: true })}
+                  style={styles.creditBtn}
+                >
+                  <Icon name="gift" size={13} color={colors.primary} />
+                  <Text style={styles.redeemText}>Use a free wash</Text>
+                </Surface>
+              </Surface>
+            ) : null}
           </View>
         );
       }}
     />
-  );
-}
-
-/** Stamp row tuned for a dark/gradient background. */
-function StampRowLight({ filled, total }: { filled: number; total: number }) {
-  return (
-    <View style={styles.stamps}>
-      {Array.from({ length: total }).map((_, i) => (
-        <View
-          key={i}
-          style={[styles.stamp, i < filled ? styles.stampOn : styles.stampOff]}
-        >
-          {i < filled ? <Icon name="check" size={9} color={colors.primary} /> : null}
-        </View>
-      ))}
-    </View>
   );
 }
 
@@ -141,7 +134,6 @@ const styles = StyleSheet.create({
   cardKicker: { fontSize: font.micro, fontWeight: weight.heavy, color: 'rgba(255,255,255,0.75)', letterSpacing: tracking.capsWide },
   cardValue: { fontSize: 56, fontWeight: weight.black, color: '#fff', letterSpacing: -2, marginTop: 2, lineHeight: 62 },
   cardSub: { fontSize: font.sm, color: 'rgba(255,255,255,0.85)', lineHeight: 19, maxWidth: '92%' },
-  cardStamps: { marginTop: spacing.lg, paddingTop: spacing.lg, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: 'rgba(255,255,255,0.22)' },
   redeemBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -151,10 +143,7 @@ const styles = StyleSheet.create({
   },
   redeemText: { fontSize: font.sm, fontWeight: weight.bold, color: colors.primary },
 
-  stamps: { flexDirection: 'row', gap: 7, flexWrap: 'wrap' },
-  stamp: { width: 24, height: 24, borderRadius: radii.full, alignItems: 'center', justifyContent: 'center' },
-  stampOn: { backgroundColor: '#fff' },
-  stampOff: { backgroundColor: 'rgba(255,255,255,0.18)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.35)' },
-
-  progressNote: { fontSize: font.sm, color: colors.textSecondary, lineHeight: 18 },
+  creditTitle: { fontSize: font.regular, fontWeight: weight.bold, color: colors.text },
+  creditNote: { fontSize: font.sm, color: colors.textSecondary },
+  creditBtn: { flexDirection: 'row', alignItems: 'center', gap: 7, alignSelf: 'flex-start' },
 });

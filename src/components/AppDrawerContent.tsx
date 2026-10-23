@@ -1,11 +1,13 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
 import { DrawerContentComponentProps } from '@react-navigation/drawer';
 import { useAuth } from '../api/AuthContext';
 import { colors, radii, font, spacing, weight, tracking } from '../theme';
 import Icon from './Icon';
+import CssGradient from './CssGradient';
+import CarWashLogo from './CarWashLogo';
+import Era92Logo from './Era92Logo';
 
 const ROLE_LABEL: Record<string, string> = {
   worker: 'Worker',
@@ -26,6 +28,10 @@ const ROLE_ICON: Record<string, string> = {
 };
 
 const ROUTE_ICON: Record<string, string> = {
+  'Current Car': 'car',
+  'My Account': 'wallet',
+  'My Points': 'award',
+  'Leaderboard': 'trophy',
   'Shift & Queue': 'sync-alt',
   'Daily Report': 'chart-bar',
   'Performance': 'hard-hat',
@@ -42,14 +48,14 @@ const ROUTE_ICON: Record<string, string> = {
   'Active Wash': 'car',
   'History': 'history',
   'Loyalty': 'star',
-  'Ledger': 'list-alt',
+  'Points History': 'list-alt',
   'Profile': 'user-circle',
   'Report a problem': 'life-ring',
   'Home': 'home',
   'Branches': 'building',
   'Catalogue': 'th-large',
   'Prices': 'tags',
-  'Loyalty Settings': 'star-half-alt',
+  'Points Settings': 'star-half-alt',
   'Customers': 'address-book',
   'Audit Log': 'shield-alt',
   'Billing': 'file-invoice-dollar',
@@ -62,10 +68,10 @@ const HIDDEN_ROUTES = new Set(['Org Detail']);
 
 // Grouping gives long role menus a readable structure instead of one flat list.
 const GROUPS: { title: string; routes: string[] }[] = [
-  { title: 'Today', routes: ['Shift & Queue', 'Active Wash', 'Home', 'Overview', 'Cash Handover', 'Daily Report'] },
-  { title: 'Reports', routes: ['Performance', 'Cash Variance', 'Stale Alerts', 'Exceptions', 'Handovers', 'Cancellations', 'History', 'Ledger', 'Audit Log'] },
-  { title: 'Manage', routes: ['Staff', 'Branches', 'Catalogue', 'Prices', 'Loyalty Settings', 'Customers', 'Organizations', 'Billing', 'Platform Admins'] },
-  { title: 'You', routes: ['Loyalty', 'Report a problem', 'Profile'] },
+  { title: 'Today', routes: ['Current Car', 'Shift & Queue', 'Active Wash', 'Home', 'Overview', 'Cash Handover', 'Daily Report'] },
+  { title: 'Reports', routes: ['Performance', 'Cash Variance', 'Stale Alerts', 'Exceptions', 'Handovers', 'Cancellations', 'History', 'Points History', 'Audit Log'] },
+  { title: 'Manage', routes: ['Staff', 'Branches', 'Catalogue', 'Prices', 'Points Settings', 'Customers', 'Organizations', 'Billing', 'Platform Admins'] },
+  { title: 'You', routes: ['My Account', 'My Points', 'Leaderboard', 'Loyalty', 'Report a problem', 'Profile'] },
 ];
 
 export default function AppDrawerContent(props: DrawerContentComponentProps) {
@@ -93,22 +99,37 @@ export default function AppDrawerContent(props: DrawerContentComponentProps) {
     const options = props.descriptors[route.key].options;
     const label = (options.drawerLabel as string) || options.title || route.name;
 
+    const content = (
+      <>
+        <View style={[styles.itemIcon, focused && styles.itemIconActive]}>
+          <Icon name={ROUTE_ICON[route.name] || 'circle'} size={13} color={focused ? '#fff' : BRAND_VIOLET} />
+        </View>
+        <Text style={[styles.itemLabel, focused && styles.itemLabelActive]} numberOfLines={1}>{label}</Text>
+        {focused ? <Icon name="chevron-right" size={10} color="rgba(255,255,255,0.85)" /> : null}
+      </>
+    );
+
     return (
       <TouchableOpacity
         key={route.key}
         onPress={() => props.navigation.navigate(route.name)}
-        style={[styles.item, focused && styles.itemActive]}
+        style={styles.itemTouch}
         activeOpacity={0.7}
       >
-        {focused ? <View style={styles.activeBar} /> : null}
-        <View style={[styles.itemIcon, focused && styles.itemIconActive]}>
-          <Icon
-            name={ROUTE_ICON[route.name] || 'circle'}
-            size={13}
-            color={focused ? '#fff' : 'rgba(255,255,255,0.55)'}
-          />
-        </View>
-        <Text style={[styles.itemLabel, focused && styles.itemLabelActive]} numberOfLines={1}>{label}</Text>
+        {focused ? (
+          // The active item wears the same violet→navy gradient as the
+          // client app's buttons, so the menu reads as part of one brand.
+          <CssGradient
+            colors={colors.gradientButton}
+            locations={[0.05, 0.75]}
+            angle={100}
+            style={[styles.item, styles.itemActive]}
+          >
+            {content}
+          </CssGradient>
+        ) : (
+          <View style={styles.item}>{content}</View>
+        )}
       </TouchableOpacity>
     );
   };
@@ -116,29 +137,23 @@ export default function AppDrawerContent(props: DrawerContentComponentProps) {
   return (
     <View style={styles.container}>
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-        {/* Identity */}
-        <View style={styles.header}>
-          <LinearGradient
-            colors={colors.gradient}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.avatar}
-          >
-            <Icon name={ROLE_ICON[role] || 'user'} size={18} color="#fff" />
-          </LinearGradient>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.name} numberOfLines={1}>{name}</Text>
-            <Text style={styles.subtitle} numberOfLines={1}>{subtitle}</Text>
-          </View>
+        {/* Brand mark — the same lockup as the client app's top bar. */}
+        <View style={styles.brand}>
+          <CarWashLogo height={24} />
         </View>
 
-        <View style={styles.roleBadge}>
-          <View style={styles.roleDot} />
-          <Text style={styles.roleBadgeText}>{(ROLE_LABEL[role] || role).toUpperCase()}</Text>
+        {/* Who is signed in — a plain line, not a banner. */}
+        <View style={styles.who}>
+          <Text style={styles.name} numberOfLines={1}>{name}</Text>
+          <Text style={styles.subtitle} numberOfLines={1}>
+            {[ROLE_LABEL[role] || role, subtitle].filter(Boolean).join(' · ')}
+          </Text>
         </View>
 
         {/* Grouped nav */}
-        <ScrollView style={styles.menu} contentContainerStyle={styles.menuContent} showsVerticalScrollIndicator={false}>
+        {/* Scrollbar on: a long menu (manager, org admin) runs past the screen,
+            and without it nothing says there is more below. */}
+        <ScrollView style={styles.menu} contentContainerStyle={styles.menuContent} showsVerticalScrollIndicator>
           {grouped.map((g) => (
             <View key={g.title} style={styles.group}>
               <Text style={styles.groupTitle}>{g.title.toUpperCase()}</Text>
@@ -154,93 +169,79 @@ export default function AppDrawerContent(props: DrawerContentComponentProps) {
             </View>
             <Text style={styles.logoutText}>Log out</Text>
           </TouchableOpacity>
+          <View style={styles.productOf}>
+            <Text style={styles.productOfText}>Product of</Text>
+            <Era92Logo height={13} color={NAVY_MUTED} />
+          </View>
         </View>
       </SafeAreaView>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.ink[900] },
-  safe: { flex: 1 },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.xl,
-  },
-  avatar: {
-    width: 44, height: 44, borderRadius: radii.full,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  name: { fontSize: font.lg, fontWeight: weight.heavy, color: '#fff', letterSpacing: tracking.tight },
-  subtitle: { fontSize: font.sm, color: 'rgba(255,255,255,0.55)', marginTop: 1 },
-  roleBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    alignSelf: 'flex-start',
-    marginHorizontal: spacing.lg,
-    marginTop: spacing.md,
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,255,255,0.14)',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: radii.full,
-  },
-  roleDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: colors.success },
-  roleBadgeText: { color: 'rgba(255,255,255,0.85)', fontSize: font.micro, fontWeight: weight.heavy, letterSpacing: tracking.capsWide },
+// The client app's palette: white surfaces, violet accent, deep-navy text.
+const BRAND_VIOLET = '#AC00FF';
+const NAVY = '#1B1F3B';
+const NAVY_MUTED = '#8A90A6';
 
-  menu: { flex: 1, marginTop: spacing.lg },
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#fff' },
+  safe: { flex: 1 },
+
+  brand: { paddingHorizontal: spacing.lg, paddingTop: spacing.lg, paddingBottom: spacing.md },
+
+  who: { paddingHorizontal: spacing.lg, paddingBottom: spacing.sm },
+  name: { fontSize: font.regular, fontWeight: weight.heavy, color: NAVY, letterSpacing: tracking.tight },
+  subtitle: { fontSize: font.xs, color: NAVY_MUTED, marginTop: 2, fontWeight: weight.medium },
+
+  // minHeight 0 lets the list shrink to the space above the footer. Without
+  // it the web build sized the list to its content, so the last items sat
+  // underneath Log out — and tapping them signed people out.
+  menu: { flex: 1, minHeight: 0, marginTop: spacing.lg },
   menuContent: { paddingBottom: spacing.lg, paddingHorizontal: spacing.md },
-  group: { marginBottom: spacing.lg },
+  group: { marginBottom: spacing.md },
   groupTitle: {
     fontSize: font.micro,
     fontWeight: weight.heavy,
-    color: 'rgba(255,255,255,0.32)',
+    color: NAVY_MUTED,
     letterSpacing: tracking.capsWide,
-    marginBottom: spacing.sm,
+    marginBottom: spacing.xs,
     marginLeft: spacing.md,
   },
+  itemTouch: { marginBottom: 2 },
   item: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
-    paddingVertical: 10,
+    paddingVertical: 9,
     paddingHorizontal: spacing.md,
-    borderRadius: radii.md,
-    marginBottom: 2,
+    borderRadius: 14,
   },
-  itemActive: { backgroundColor: 'rgba(255,255,255,0.09)' },
-  activeBar: {
-    position: 'absolute',
-    left: 0, top: 10, bottom: 10,
-    width: 3,
-    borderRadius: radii.full,
-    backgroundColor: colors.primary,
-  },
+  itemActive: { borderRadius: 14 },
   itemIcon: {
-    width: 28, height: 28, borderRadius: radii.sm,
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    width: 30, height: 30, borderRadius: 10,
+    backgroundColor: '#F4ECFF',
     alignItems: 'center', justifyContent: 'center',
   },
-  itemIconActive: { backgroundColor: colors.primary },
-  itemLabel: { fontSize: font.regular, fontWeight: weight.semibold, color: 'rgba(255,255,255,0.6)', flex: 1 },
+  itemIconActive: { backgroundColor: 'rgba(255,255,255,0.2)' },
+  itemLabel: { fontSize: font.regular, fontWeight: weight.semibold, color: NAVY, flex: 1 },
   itemLabelActive: { color: '#fff', fontWeight: weight.bold },
 
   footer: {
+    backgroundColor: '#fff',
     paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.md,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(255,255,255,0.10)',
+    borderTopColor: '#E6E8F0',
   },
   logoutBtn: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: 8 },
   logoutIcon: {
-    width: 28, height: 28, borderRadius: radii.sm,
-    backgroundColor: colors.error + '1F',
+    width: 30, height: 30, borderRadius: 10,
+    backgroundColor: colors.error + '1A',
     alignItems: 'center', justifyContent: 'center',
   },
   logoutText: { fontSize: font.regular, fontWeight: weight.bold, color: colors.error },
+  productOf: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: spacing.sm },
+  productOfText: { fontSize: font.xs, color: NAVY_MUTED, fontWeight: weight.medium },
 });

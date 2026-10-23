@@ -229,6 +229,10 @@ export const api = {
 
   // Worker points — the staff incentive scheme.
   myPoints: () => req('GET', '/worker-points/me'),
+  // Standings by points earned this week / month (or all time): ranked rows
+  // for the caller's branch, each with `points`, `washes` and `rank`.
+  leaderboard: (period: 'week' | 'month' | 'all' = 'week') =>
+    req('GET', `/worker-points/leaderboard?period=${period}`),
   pointsLeaderboard: (branchId?: string) =>
     req('GET', `/worker-points/leaderboard${branchId ? `?branch_id=${branchId}` : ''}`),
 
@@ -300,6 +304,20 @@ export const api = {
   },
 
   // Loyalty config
+  // Owner settings: both point schemes, per wash type.
+  getClientPointsSettings: () => req('GET', '/settings/client-points'),
+  updateClientPointsSettings: (data: {
+    enabled?: boolean; point_value_ugx?: number;
+    services?: Array<{ id: string; earns_point: boolean; client_points_awarded: number }>;
+  }) => req('PUT', '/settings/client-points', data),
+  // Org admin correcting a client's points in this organisation's scheme.
+  adjustClientPoints: (clientId: string, points: number, reason: string) =>
+    req('POST', '/settings/client-points/adjust', { client_id: clientId, points, reason }),
+  getWorkerPointsSettings: () => req('GET', '/settings/worker-points'),
+  updateWorkerPointsSettings: (data: {
+    enabled?: boolean; point_value_ugx?: number;
+    services?: Array<{ id: string; worker_points_awarded: number }>;
+  }) => req('PUT', '/settings/worker-points', data),
   getLoyaltyConfig: () => req('GET', '/loyalty-config'),
   updateLoyaltyConfig: (data: { washes_required: number; min_amount_ugx: number; credit_expiry_days?: number | null }) =>
     req('PUT', '/loyalty-config', data),
@@ -331,6 +349,11 @@ export const api = {
   requestCloseShift: (id: string) => req('POST', `/shifts/${id}/request-close`),
   // Clears a stranded pending_close day so the worker can keep working.
   reopenShift: (id: string) => req('POST', `/shifts/${id}/reopen`),
+  // Worker wallets: who owes cash, and a manager confirming they received it.
+  listWallets: (branchId?: string) => req('GET', `/wallet${branchId ? `?branch_id=${branchId}` : ''}`),
+  receiveCash: (staffId: string, amountUgx: number, note?: string) =>
+    req('POST', `/wallet/${staffId}/cash-handover`, { amount_ugx: amountUgx, note }),
+  myWallet: () => req('GET', '/wallet/me'),
   closeShift: (id: string, counted: number, notes?: string) =>
     req('POST', `/shifts/${id}/close`, { counted_cash_ugx: counted, notes }),
 
@@ -492,6 +515,10 @@ export const api = {
   // which lets the server pick one.
   clientPricesForBranch: (branchId: string) => req('GET', `/me/washes/prices?branch_id=${branchId}`),
   clientLedger: () => req('GET', '/me/washes/loyalty/ledger'),
+  // Client points (replaced the stamp card): balance, what it is worth, and
+  // the history behind it. Scoped to the organisation on the client's token.
+  clientPoints: () => req('GET', '/me/washes/points'),
+  clientPointsLedger: () => req('GET', '/me/washes/points/ledger'),
 
   // Client self-service booking
   //
@@ -524,6 +551,8 @@ export const api = {
     use_free_wash?: boolean;
     use_promo?: boolean;
     use_promo_free?: boolean;
+    // Spend the client's points against this wash; deducted at booking.
+    use_points?: boolean;
     declared_payment_method?: 'cash' | 'mtn' | 'airtel';
     declared_payment_phone?: string;
   }) => req('POST', '/me/washes', data),

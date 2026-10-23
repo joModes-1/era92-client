@@ -454,10 +454,12 @@ export function SuccessToast({
           <Icon name="times" size={12} color="rgba(255,255,255,0.85)" />
         </TouchableOpacity>
 
-        <Text style={s.toastTitle}>Payment Successfully</Text>
+        {/* Shown after the client picks how to pay — nothing has been charged
+            yet; the attendant confirms the payment at the bay. */}
+        <Text style={s.toastTitle}>Payment method saved</Text>
         <Text style={s.toastBody}>
-          You have successfully paid for your car wash
-          {points ? <>{' '}and have earned <Text style={s.toastPoints}>+{points} points</Text></> : null}
+          Pay the attendant when your car is ready — you earn your points once they confirm it
+          {points ? <>{' '}(<Text style={s.toastPoints}>+{points} points</Text>)</> : null}
         </Text>
 
         <TouchableOpacity onPress={onViewPoints} style={s.toastBtn} activeOpacity={0.8}>

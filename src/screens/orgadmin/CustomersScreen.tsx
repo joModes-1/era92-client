@@ -21,8 +21,7 @@ export default function CustomersScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [adjustTarget, setAdjustTarget] = useState<any>(null);
-  const [washDelta, setWashDelta] = useState('0');
-  const [creditDelta, setCreditDelta] = useState('0');
+  const [pointsDelta, setPointsDelta] = useState('0');
   const [reason, setReason] = useState('');
   const [adjusting, setAdjusting] = useState(false);
 
@@ -68,28 +67,30 @@ export default function CustomersScreen() {
 
   const openAdjust = (client: any) => {
     setAdjustTarget(client);
-    setWashDelta('0');
-    setCreditDelta('0');
+    setPointsDelta('0');
     setReason('');
   };
 
   const submitAdjust = async () => {
-    const wd = parseInt(washDelta, 10) || 0;
-    const cd = parseInt(creditDelta, 10) || 0;
-    if (wd === 0 && cd === 0) {
-      alert('No change', 'Set a non-zero wash or credit adjustment.');
+    const pd = parseInt(pointsDelta, 10) || 0;
+    if (pd === 0) {
+      alert('No change', 'Enter how many points to add (or a negative number to remove).');
       return;
     }
-    if (!reason.trim()) {
+    if (Number(adjustTarget.points_balance || 0) + pd < 0) {
+      alert('Too many points', `They only have ${Number(adjustTarget.points_balance || 0)} points.`);
+      return;
+    }
+    if (reason.trim().length < 3) {
       alert('Reason required', 'Explain why you are adjusting this account.');
       return;
     }
     setAdjusting(true);
     try {
-      await api.adjustClientLoyalty(adjustTarget.id, { wash_delta: wd, credit_delta: cd, reason: reason.trim() });
+      await api.adjustClientPoints(adjustTarget.id, pd, reason.trim());
       setAdjustTarget(null);
       await load(query || undefined);
-      alert('Adjusted', `${adjustTarget.full_name}'s loyalty account has been updated.`);
+      alert('Adjusted', `${adjustTarget.full_name}'s points have been updated.`);
     } catch (e: any) {
       alert('Error', e.message);
     }
@@ -107,7 +108,7 @@ export default function CustomersScreen() {
 
   // Counted over what has loaded — labelled as such, never presented as an
   // org-wide figure it is not.
-  const withCredits = clients.filter((c: any) => Number(c.free_wash_credits || 0) > 0).length;
+  const withPoints = clients.filter((c: any) => Number(c.points_balance || 0) > 0).length;
 
   return (
     <View style={styles.container}>
@@ -119,12 +120,12 @@ export default function CustomersScreen() {
             : `${total.toLocaleString()} registered`
         }
       >
-        <HeaderStat label="With free washes" value={withCredits} icon="gift" />
+        <HeaderStat label="With points" value={withPoints} icon="award" />
         <HeaderStat label="Showing" value={`${clients.length}/${total}`} icon="list" />
       </ScreenHeader>
 
       <View style={styles.searchBar}>
-        <SearchField value={query} onChangeText={handleSearch} placeholder="Name, phone, or member code" />
+        <SearchField value={query} onChangeText={handleSearch} placeholder="Name or phone" />
       </View>
 
       <ScrollView
@@ -139,7 +140,7 @@ export default function CustomersScreen() {
             <EmptyState
               icon={query ? 'search' : 'address-book'}
               title={query ? 'No matches' : 'No customers yet'}
-              message={query ? 'Try a different name, phone or code.' : 'Customers appear here once they register.'}
+              message={query ? 'Try a different name or phone.' : 'Customers appear here once they register.'}
             />
           </Surface>
         ) : (
@@ -147,27 +148,25 @@ export default function CustomersScreen() {
             <SectionHeader title={query ? 'Results' : 'All customers'} count={clients.length} />
             <Surface elevation="sm" padded="sm">
               {clients.map((c: any, i: number) => {
-                const credits = Number(c.free_wash_credits || 0);
+                const pts = Number(c.points_balance || 0);
                 return (
                   <ListRow
                     key={c.id}
                     onPress={() => openAdjust(c)}
                     leading={initials(c.full_name)}
-                    leadingTone={credits > 0 ? 'accent' : 'neutral'}
+                    leadingTone={pts > 0 ? 'accent' : 'neutral'}
                     title={c.full_name}
                     subtitle={c.phone}
                     last={i === clients.length - 1}
                     trailing={
                       <View style={styles.right}>
                         <Text style={styles.washes}>
-                          <Text style={styles.washNum}>{Number(c.lifetime_washes || 0)}</Text> washes
+                          <Text style={styles.washNum}>{Number(c.settled_washes || 0)}</Text> washes
                         </Text>
-                        {credits > 0 ? (
+                        {pts > 0 ? (
                           <View style={styles.creditPill}>
-                            <Icon name="gift" size={8} color={colors.accent} />
-                            <Text style={styles.creditText}>
-                              {credits} free
-                            </Text>
+                            <Icon name="award" size={8} color={colors.accent} />
+                            <Text style={styles.creditText}>{pts.toLocaleString()} pts</Text>
                           </View>
                         ) : null}
                       </View>
@@ -209,7 +208,7 @@ export default function CustomersScreen() {
       <FormSheet
         visible={!!adjustTarget}
         onClose={() => setAdjustTarget(null)}
-        title="Adjust loyalty"
+        title="Adjust points"
         subtitle={adjustTarget?.full_name}
         submitLabel="Apply adjustment"
         onSubmit={submitAdjust}
@@ -219,31 +218,24 @@ export default function CustomersScreen() {
         {adjustTarget ? (
           <Surface elevation="none" tone={colors.bgSunken} borderless style={styles.current}>
             <View style={styles.currentItem}>
-              <Text style={styles.currentValue}>{Number(adjustTarget.lifetime_washes || 0)}</Text>
-              <Text style={styles.currentLabel}>LIFETIME WASHES</Text>
+              <Text style={styles.currentValue}>{Number(adjustTarget.settled_washes || 0)}</Text>
+              <Text style={styles.currentLabel}>WASHES</Text>
             </View>
             <View style={styles.currentDivider} />
             <View style={styles.currentItem}>
-              <Text style={styles.currentValue}>{Number(adjustTarget.free_wash_credits || 0)}</Text>
-              <Text style={styles.currentLabel}>FREE CREDITS</Text>
+              <Text style={styles.currentValue}>{Number(adjustTarget.points_balance || 0).toLocaleString()}</Text>
+              <Text style={styles.currentLabel}>POINTS</Text>
             </View>
           </Surface>
         ) : null}
 
         <Field
-          label="Wash count change"
-          value={washDelta}
-          onChangeText={setWashDelta}
+          label="Points to add"
+          value={pointsDelta}
+          onChangeText={setPointsDelta}
           keyboardType="numbers-and-punctuation"
-          placeholder="e.g. 1 or -1"
-          hint="Use a negative number to remove washes."
-        />
-        <Field
-          label="Free credit change"
-          value={creditDelta}
-          onChangeText={setCreditDelta}
-          keyboardType="numbers-and-punctuation"
-          placeholder="e.g. 1 or -1"
+          placeholder="e.g. 50 or -20"
+          hint="Use a negative number to remove points."
         />
         <Field
           label="Reason"

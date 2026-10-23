@@ -47,7 +47,7 @@
           "image": "./assets/splash-wordmark.png",
           "imageWidth": 300,
           "resizeMode": "contain",
-          "backgroundColor": "#3B2A9E"
+          "backgroundColor": "#1B3C8E"
         }
       ],
       "expo-updates",

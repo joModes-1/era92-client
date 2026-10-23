@@ -7,7 +7,7 @@ import { api } from '../../api';
 import { useAuth } from '../../api/AuthContext';
 import { colors, radii, font, spacing, weight, tracking, shadow } from '../../theme';
 import Icon from '../../components/Icon';
-import AppTopBar, { TopBarPill } from '../../components/AppTopBar';
+import AppTopBar from '../../components/AppTopBar';
 import GradientText from '../../components/GradientText';
 import Badge from '../../components/Badge';
 import { Surface, SectionHeader, EmptyState, SkeletonList, ListRow, initials } from '../../components/ui';
@@ -47,20 +47,30 @@ export default function ManagerDashboardScreen() {
   const [exceptions, setExceptions] = useState<any[]>([]);
   const [shifts, setShifts] = useState<any[]>([]);
   const [recent, setRecent] = useState<any[]>([]);
+  const [wallets, setWallets] = useState<{ owed: number; owing: number }>({ owed: 0, owing: 0 });
   const [loaded, setLoaded] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
-    const [d, e, sh, r] = await Promise.allSettled([
+    const [d, e, sh, r, wl] = await Promise.allSettled([
       api.daily(today()),
       api.exceptions(weekAgo(), today()),
       api.listShifts({ from: today(), to: today() }),
       api.listWashes(),
+      api.listWallets(),
     ]);
     if (d.status === 'fulfilled') setDaily(d.value);
     if (e.status === 'fulfilled' && Array.isArray(e.value)) setExceptions(e.value);
     if (sh.status === 'fulfilled' && Array.isArray(sh.value)) setShifts(sh.value);
     if (r.status === 'fulfilled' && Array.isArray(r.value)) setRecent(r.value.slice(0, 6));
+    // Cash owed comes from the worker wallets — the same figures Cash
+    // Handover uses, so the two screens never disagree.
+    if (wl.status === 'fulfilled') {
+      setWallets({
+        owed: Number(wl.value?.total_owed_ugx || 0),
+        owing: (wl.value?.staff || []).filter((x: any) => x.owes_ugx > 0).length,
+      });
+    }
   }, []);
 
   useEffect(() => { (async () => { await load(); setLoaded(true); })(); }, [load]);
@@ -91,23 +101,14 @@ export default function ManagerDashboardScreen() {
   // 'open' is currently working; 'pending_close' has finished for the day and
   // is waiting on this manager to record the handover. Both still owe cash.
   const working = shifts.filter((s: any) => s.status === 'open');
-  const pendingCash = shifts.filter((s: any) => s.status !== 'closed');
-  const owed = pendingCash.reduce((sum: number, s: any) => sum + Number(s.live_expected_cash_ugx || 0), 0);
+  const owed = wallets.owed;
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
+      {/* No exceptions pill up here: the count lives on the Exceptions card
+          below, which says what they are and opens the list. */}
       <AppTopBar
         context={actor?.branch_name || 'Your branch'}
-        right={
-          exceptions.length > 0 ? (
-            <TopBarPill
-              icon="exclamation"
-              label={String(exceptions.length)}
-              tone="error"
-              onPress={() => navigation.navigate('Exceptions')}
-            />
-          ) : undefined
-        }
         onMenu={() => navigation.openDrawer?.()}
       />
 
@@ -206,7 +207,7 @@ export default function ManagerDashboardScreen() {
                 UGX {ugx(owed)} still with workers
               </Text>
               <Text style={styles.alertSub}>
-                {pendingCash.length} worker{pendingCash.length === 1 ? '' : 's'} yet to hand in
+                {wallets.owing} worker{wallets.owing === 1 ? '' : 's'} yet to hand in
               </Text>
             </View>
             <Icon name="chevron-right" size={11} color={colors.warning} />

@@ -228,7 +228,7 @@ export default function CatalogueScreen() {
                     >
                       <Icon name="gift" size={10} color={s.earns_point ? colors.success : colors.textMuted} />
                       <Text style={[styles.flagText, s.earns_point && { color: colors.success }]}>
-                        {s.earns_point ? 'Earns loyalty' : 'No loyalty'}
+                        {s.earns_point ? 'Earns ' + Number(s.client_points_awarded || 0) + ' pts' : 'No points'}
                       </Text>
                     </TouchableOpacity>
                   </View>
@@ -240,8 +240,8 @@ export default function CatalogueScreen() {
               <Icon name="info-circle" size={11} color={colors.textMuted} />
               <Text style={styles.hintText}>
                 {isManager
-                  ? 'Add-ons like "Engine" should not count toward free washes — turn loyalty off for those. Items marked shared belong to the whole organisation; only an org admin can change those.'
-                  : 'Add-ons like "Engine" should not count toward free washes — turn loyalty off for those.'}
+                  ? 'Turn points off for add-ons that should not reward clients. How many points each type gives is set in Points Settings. Items marked shared belong to the whole organisation; only an org admin can change those.'
+                  : 'Turn points off for add-ons that should not reward clients. How many points each type gives is set in Points Settings.'}
               </Text>
             </View>
           </>

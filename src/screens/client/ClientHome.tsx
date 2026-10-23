@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { View, Text, StyleSheet, ScrollView, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, RefreshControl, TouchableOpacity } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../../api/AuthContext';
 import { api } from '../../api';
@@ -10,8 +10,7 @@ import {
 } from './HomeParts';
 import { consumePaymentDone } from './paymentToast';
 import { artFor } from './serviceArt';
-import PointsSheet, { pointsForAmount } from './PointsSheet';
-import { isPaidWithPoints } from './paymentToast';
+import PointsSheet from './PointsSheet';
 import NotificationPrompt from '../../components/NotificationPrompt';
 import BranchPickerSheet from '../../components/BranchPickerSheet';
 import PaymentPromptSheet from './PaymentPromptSheet';
@@ -29,14 +28,9 @@ import { Surface, EmptyState, SkeletonList } from '../../components/ui';
  * swapped for the client's own equivalents; nothing about the layout was
  * redesigned.
  *
- * One real gap, not a design choice: `myPoints()` (GET /worker-points/me)
- * is the WORKER incentive-points system and has no client equivalent on
- * the backend today — there is no "client points" table. Rather than block
- * on that, this screen reads it defensively (it 403s for a client and the
- * catch below treats that exactly like "scheme off"), so the pill and
- * banner render with 0 rather than crashing the screen. The visual shell
- * is unchanged; wiring a REAL client points source is a backend task, not
- * something this file can invent on its own.
+ * Points are the client's real balance (GET /me/washes/points) — the
+ * scheme the owner configures in Settings: points per wash type and what a
+ * point is worth. The points sheet lists the actual ledger behind it.
  */
 
 const ugx = (n: any) => Number(n || 0).toLocaleString();
@@ -65,6 +59,7 @@ export default function ClientHome({ navigation }: any) {
   const { actor } = useAuth();
   const alert = useAppAlert();
   const [points, setPoints] = useState<any>(null);
+  const [pointsLedger, setPointsLedger] = useState<any[]>([]);
   const [active, setActive] = useState<any>(null);
   const [history, setHistory] = useState<any[]>([]);
   const [loyalty, setLoyalty] = useState<any>(null);
@@ -89,20 +84,17 @@ export default function ClientHome({ navigation }: any) {
 
   const load = useCallback(async () => {
     try {
-      const [pts, a, h, l, prices, promoRes] = await Promise.allSettled([
-        // Worker-only endpoint (see file doc comment) — 403s for a client;
-        // caught below exactly like "the scheme is off", never crashes the
-        // screen. Kept as the FIRST attempt rather than skipped outright:
-        // if a client-facing points source is ever added at this same
-        // path, this line needs no change.
-        api.myPoints(),
+      const [pts, a, h, l, prices, promoRes, ledgerRes] = await Promise.allSettled([
+        api.clientPoints(),
         api.clientActive(),
         api.clientHistory(),
         api.clientLoyalty(),
         api.clientPrices(),
         api.clientPromo(),
+        api.clientPointsLedger(),
       ]);
       if (pts.status === 'fulfilled') setPoints(pts.value);
+      if (ledgerRes.status === 'fulfilled') setPointsLedger(Array.isArray(ledgerRes.value) ? ledgerRes.value : []);
       if (a.status === 'fulfilled') setActive(a.value);
       if (h.status === 'fulfilled') setHistory(Array.isArray(h.value) ? h.value : []);
       if (l.status === 'fulfilled') setLoyalty(l.value);
@@ -145,27 +137,52 @@ export default function ClientHome({ navigation }: any) {
     prevStatus.current = status;
   }, [active?.status, active?.is_redemption, alert]);
 
-  // Points earned per settled wash (UI-only rule, see PointsSheet).
-  const pointsEntries = React.useMemo(() => history
-    .filter((w: any) => w.status === 'settled')
-    .map((w: any) => ({
-      id: w.id,
-      title: w.service_name || 'Wash',
-      subtitle: `Completed • ${dateLabel(w.settled_at || w.started_at)}`,
-      points: pointsForAmount(Number(w.amount_ugx ?? w.quoted_amount_ugx ?? 0)),
-    }))
-    .filter((e: any) => e.points > 0), [history]);
-  const pointsBalance = pointsEntries.reduce((sum: number, e: any) => sum + e.points, 0);
+  // The real points history: earned on settled washes, spent at booking,
+  // refunded on a cancel, taken back on a reversal.
+  const ENTRY_LABEL: Record<string, string> = {
+    earn: 'Earned', redeem: 'Used', refund: 'Refunded', reversal: 'Taken back', adjust: 'Adjusted',
+  };
+  const pointsEntries = React.useMemo(() => pointsLedger.map((r: any, i: number) => ({
+    id: `${r.created_at}-${i}`,
+    title: r.service_name || (r.entry_type === 'adjust' ? 'Points adjustment' : 'Wash'),
+    subtitle: `${ENTRY_LABEL[r.entry_type] || r.entry_type} • ${dateLabel(r.created_at)}`,
+    points: Number(r.points_delta),
+  })), [pointsLedger]);
+  const pointsBalance = Number(points?.balance || 0);
 
+  // What the client still owes after points; a free wash owes nothing.
+  const amountDue = (w: any) => Number(w?.amount_due_ugx ?? w?.quoted_amount_ugx ?? 0);
   const showPaymentPrompt = !!active
     && !active.is_redemption
-    && !isPaidWithPoints(active.id)
     && !active.declared_payment_method
-    && Number(active.quoted_amount_ugx) > 0
+    && amountDue(active) > 0
     && !dismissedPrompts.includes(active.id);
   const dismissPrompt = () => {
     setForcePrompt(false);
     if (active) setDismissedPrompts((ids) => [...ids, active.id]);
+  };
+
+  const [cancelling, setCancelling] = useState(false);
+  const cancelBooking = async () => {
+    if (!active) return;
+    setCancelling(true);
+    try {
+      const res: any = await api.cancelBookingRequest(active.id);
+      await load();
+      alert(
+        'Booking cancelled',
+        Number(res?.points_refunded || 0) > 0
+          ? `Your ${Number(res.points_refunded).toLocaleString()} points are back in your account.`
+          : 'You can book again any time.'
+      );
+    } catch (e: any) {
+      // A worker took the car between the screen refreshing and the tap.
+      alert('Too late to cancel', e?.code === 'BAD_STATE'
+        ? 'A worker has already started on your car.'
+        : (e?.message || 'Try again.'));
+      await load();
+    }
+    setCancelling(false);
   };
 
   const onRefresh = async () => {
@@ -225,7 +242,7 @@ export default function ClientHome({ navigation }: any) {
     <SafeAreaView style={styles.container} edges={['top']}>
       <HomeTopBar
         branch={actor?.branch_name || `Good day, ${firstName}`}
-        points={Number(points?.points_balance || 0)}
+        points={Number(points?.balance || 0)}
         onPoints={() => navigation.navigate('Loyalty')}
         onMenu={() => navigation.openDrawer?.()}
         onBranch={() => setPickerOpen(true)}
@@ -244,12 +261,19 @@ export default function ClientHome({ navigation }: any) {
             sheet, since that is the equivalent "see the detail" surface a
             client actually has. */}
         <RewardsBanner
-          headline={`Get up to ${compactUgx(Number(points?.value_ugx || 0) || 200000)} in rewards`}
-          amount={compactUgx(Number(points?.value_ugx || 0) || 200000)}
+          headline={`Get up to ${compactUgx(Number(points?.worth_ugx || 0) || 200000)} in rewards`}
+          amount={compactUgx(Number(points?.worth_ugx || 0) || 200000)}
           onPress={() => navigation.navigate('Loyalty')}
         />
 
         {active ? <WashTracker status={active.status} /> : null}
+        {/* A booking nobody has taken yet can still be cancelled; any points
+            spent on it come back. Once a worker has the car it is too late. */}
+        {active?.status === 'requested' ? (
+          <TouchableOpacity onPress={cancelBooking} style={styles.cancelLink} activeOpacity={0.7} disabled={cancelling}>
+            <Text style={styles.cancelText}>{cancelling ? 'Cancelling…' : 'Cancel booking'}</Text>
+          </TouchableOpacity>
+        ) : null}
 
         {/* Tapping a tile jumps straight into the same branch-scan step the
             orange bar below starts — a client still has no branch_id on
@@ -298,7 +322,11 @@ export default function ClientHome({ navigation }: any) {
             ) : (
               recentWashes.map((w: any) => {
                 const isPending = !!active && w.id === active.id;
-                const label = isPending ? 'Pending' : w.status === 'cancelled' ? 'Cancelled' : 'Completed';
+                // The same words as the tracker above, so the list and the
+                // progress bar never disagree about where the car is.
+                const stage = active?.status === 'ready' ? 'Finished'
+                  : active?.status === 'in_progress' ? 'In progress' : 'Booked';
+                const label = isPending ? stage : w.status === 'cancelled' ? 'Cancelled' : 'Completed';
                 const amount = Number(w.amount_ugx ?? w.quoted_amount_ugx ?? 0);
                 return (
                   <RecentRow
@@ -308,7 +336,7 @@ export default function ClientHome({ navigation }: any) {
                     subtitle={`${label} • ${dateLabel(w.settled_at || w.started_at || w.requested_at)}`}
                     amount={`UGX ${compactUgx(amount).toLowerCase()}`}
                     tone={amount === 0 ? 'accent' : 'brand'}
-                    onPress={isPending && !isPaidWithPoints(w.id) ? () => setForcePrompt(true) : undefined}
+                    onPress={isPending && amountDue(w) > 0 && !w.is_redemption ? () => setForcePrompt(true) : undefined}
                   />
                 );
               })
@@ -316,11 +344,11 @@ export default function ClientHome({ navigation }: any) {
 
             <PromptRow
               icon="gift"
-              title="Your loyalty"
+              title="Your points"
               subtitle={
-                loyalty
-                  ? `${Number(loyalty.wash_count || 0)}/${Number(loyalty.washes_required || 7)} washes · tap for detail`
-                  : 'Wash with us to start earning rewards'
+                Number(points?.balance || 0) > 0
+                  ? `${Number(points.balance).toLocaleString()} points · worth UGX ${Number(points.worth_ugx || 0).toLocaleString()}`
+                  : 'Earn points on every wash'
               }
               onPress={() => navigation.navigate('Loyalty')}
             />
@@ -373,6 +401,7 @@ export default function ClientHome({ navigation }: any) {
       <PointsSheet
         visible={pointsOpen}
         balance={pointsBalance}
+        worthUgx={Number(points?.worth_ugx || 0)}
         entries={pointsEntries}
         onClose={() => setPointsOpen(false)}
         onRedeem={() => {
@@ -386,6 +415,8 @@ export default function ClientHome({ navigation }: any) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
+  cancelLink: { alignSelf: 'center', paddingVertical: 6, paddingHorizontal: spacing.md, marginTop: -spacing.xs },
+  cancelText: { fontSize: font.sm, fontWeight: weight.semibold, color: colors.error },
   tileGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, justifyContent: 'space-between' },
   sectionLabel: {
     fontSize: font.regular,

@@ -6,17 +6,16 @@ import ComponentButton1 from '../../components/buttons/ComponentButton1';
 import Icon from '../../components/Icon';
 import { artFor } from './serviceArt';
 
-// UI-only until a real client points system exists: 1 point per UGX 100.
-export const pointsForAmount = (ugx: number) => Math.floor(Number(ugx || 0) / 100);
-
 export type PointsEntry = { id: string; title: string; subtitle: string; points: number };
 
-/** "You have N points" sheet with recent point earnings and a Redeem button. */
+/** "You have N points" sheet: the real balance and its worth, recent point movements, and Redeem. */
 export default function PointsSheet({
-  visible, balance, entries, onClose, onRedeem,
+  visible, balance, worthUgx, entries, onClose, onRedeem,
 }: {
   visible: boolean;
   balance: number;
+  /** What the balance is worth in UGX, from the owner's point value. */
+  worthUgx?: number;
   entries: PointsEntry[];
   onClose: () => void;
   onRedeem: () => void;
@@ -41,7 +40,7 @@ export default function PointsSheet({
           <View>
             <Text style={s.youHave}>You have</Text>
             <Text style={s.balance}>{balance.toLocaleString()} points</Text>
-            <Text style={s.program}>era92 loyalty</Text>
+            <Text style={s.program}>{worthUgx ? `Worth UGX ${worthUgx.toLocaleString()}` : 'era92 loyalty'}</Text>
           </View>
         </LinearGradient>
 
@@ -58,7 +57,7 @@ export default function PointsSheet({
                 <Text style={s.rowTitle} numberOfLines={1}>{e.title}</Text>
                 <Text style={s.rowSub} numberOfLines={1}>{e.subtitle}</Text>
               </View>
-              <Text style={s.rowPoints}>+{e.points.toLocaleString()} Points</Text>
+              <Text style={s.rowPoints}>{e.points > 0 ? '+' : ''}{e.points.toLocaleString()} Points</Text>
             </View>
           ))}
         </ScrollView>

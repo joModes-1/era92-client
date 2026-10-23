@@ -14,20 +14,23 @@ import { cssGradientPoints } from '../utils/cssGradient';
  * gives identical results on both.
  */
 export default function CssGradient({
-  colors, locations, angle, style, children,
+  colors, locations, angle, style, children, width, height,
 }: {
   colors: readonly string[];
   locations?: readonly number[];
   angle: number;
   style?: StyleProp<ViewStyle>;
   children?: React.ReactNode;
+  /** Known size (e.g. full screen). Skips measuring, so even the first frame is right. */
+  width?: number;
+  height?: number;
 }) {
-  const [box, setBox] = useState({ w: 343, h: 46 });
+  const [box, setBox] = useState({ w: width ?? 343, h: height ?? 46 });
   const onLayout = (e: LayoutChangeEvent) => {
-    const { width, height } = e.nativeEvent.layout;
-    if (width !== box.w || height !== box.h) setBox({ w: width, h: height });
+    const { width: w, height: h } = e.nativeEvent.layout;
+    if (w !== box.w || h !== box.h) setBox({ w, h });
   };
-  const { start, end } = cssGradientPoints(angle, box.w, box.h);
+  const { start, end } = cssGradientPoints(angle, width ?? box.w, height ?? box.h);
   return (
     <LinearGradient
       colors={colors as any}

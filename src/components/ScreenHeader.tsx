@@ -1,19 +1,27 @@
 import React, { ReactNode } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation, DrawerActions } from '@react-navigation/native';
-import { colors, radii, font, spacing, weight, tracking, shadow } from '../theme';
+import { colors, radii, font, spacing, weight, tracking } from '../theme';
 import Icon from './Icon';
 
 // Minimum breathing room below the status bar. The real inset comes from
 // useSafeAreaInsets() — this is only the floor for devices that report 0.
-const MIN_TOP = Platform.select({ ios: 12, android: 12, default: 16 }) as number;
+const MIN_TOP = Platform.select({ ios: 8, android: 8, default: 12 }) as number;
+
+// The rebranded client palette: white chrome, deep-navy type, violet kept for
+// accents. Staff screens used to open on a full violet→navy gradient band —
+// measured at 45–91% saturated brand colour across the top of every page,
+// against ~5% on the rebranded client home. Same structure now, client look.
+const NAVY = colors.text;
+const VIOLET = '#AC00FF';
+const VIOLET_TINT = '#F4ECFF';
 
 /**
- * ScreenHeader — brand gradient with a soft radial bloom, left-aligned title
- * (titles read better left-aligned than centred at this size), and an
- * optional stat/action rail that sits over the gradient.
+ * ScreenHeader — white top bar in the client app's style: page title and
+ * subtitle on the left, the menu (or an action) on the right, exactly where
+ * the client home puts its menu. An optional stat rail sits underneath on
+ * light violet-tinted chips.
  */
 export default function ScreenHeader({
   title, subtitle, action, children, compact, back,
@@ -30,79 +38,67 @@ export default function ScreenHeader({
   const insets = useSafeAreaInsets();
 
   return (
-    <LinearGradient
-      colors={[...colors.gradientBrandDeep, colors.primary]}
-      locations={[0, 0.52, 1]}
-      start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 1 }}
-      style={[styles.header, compact && styles.headerCompact, { paddingTop: insets.top + MIN_TOP }]}
-    >
-      {/* light bloom so the gradient doesn't read as a flat band */}
-      <View pointerEvents="none" style={styles.bloom} />
-
+    <View style={[styles.header, compact && styles.headerCompact, { paddingTop: insets.top + MIN_TOP }]}>
       <View style={styles.row}>
         {back ? (
-          <TouchableOpacity
-            onPress={() => navigation.goBack()}
-            style={styles.menuBtn}
-            hitSlop={10}
-            activeOpacity={0.7}
-          >
-            <Icon name="chevron-left" size={16} color="#fff" />
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn} hitSlop={10} activeOpacity={0.7}>
+            <Icon name="chevron-left" size={16} color={NAVY} />
           </TouchableOpacity>
-        ) : (
-          <TouchableOpacity
-            onPress={() => navigation.dispatch(DrawerActions.toggleDrawer())}
-            style={styles.menuBtn}
-            hitSlop={10}
-            activeOpacity={0.7}
-          >
-            <View style={styles.hamburgerLine} />
-            <View style={[styles.hamburgerLine, { width: 12 }]} />
-            <View style={styles.hamburgerLine} />
-          </TouchableOpacity>
-        )}
+        ) : null}
 
         <View style={styles.titleWrap}>
           <Text style={styles.title} numberOfLines={1}>{title}</Text>
           {subtitle ? <Text style={styles.subtitle} numberOfLines={1}>{subtitle}</Text> : null}
         </View>
 
-        <View style={styles.actionSlot}>{action}</View>
+        {action ? <View style={styles.actionSlot}>{action}</View> : null}
+
+        {back ? null : (
+          <TouchableOpacity
+            onPress={() => navigation.dispatch(DrawerActions.toggleDrawer())}
+            style={styles.menuBtn}
+            hitSlop={10}
+            activeOpacity={0.6}
+            accessibilityLabel="Open menu"
+          >
+            <View style={styles.menuLine} />
+            <View style={styles.menuLine} />
+            <View style={styles.menuLine} />
+          </TouchableOpacity>
+        )}
       </View>
 
       {children ? <View style={styles.rail}>{children}</View> : null}
-    </LinearGradient>
+    </View>
   );
 }
 
-/** A glass pill for putting live stats in the header rail. */
+/** A light violet-tinted chip for putting live stats in the header rail. */
 export function HeaderStat({ label, value, icon }: { label: string; value: string | number; icon?: string }) {
   return (
-    <View style={styles.glass}>
-      {icon ? <Icon name={icon} size={11} color="rgba(255,255,255,0.9)" /> : null}
+    <View style={styles.stat}>
+      {icon ? (
+        <View style={styles.statIcon}>
+          <Icon name={icon} size={11} color={VIOLET} />
+        </View>
+      ) : null}
       {/* flex + auto-shrink: long values like "UGX 617,000" must not spill
-          out of the pill or clip the label underneath. */}
-      <View style={styles.glassText}>
-        <Text
-          style={styles.glassValue}
-          numberOfLines={1}
-          adjustsFontSizeToFit
-          minimumFontScale={0.6}
-        >
+          out of the chip or clip the label underneath. */}
+      <View style={styles.statText}>
+        <Text style={styles.statValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}>
           {value}
         </Text>
-        <Text style={styles.glassLabel} numberOfLines={1}>{label.toUpperCase()}</Text>
+        <Text style={styles.statLabel} numberOfLines={1}>{label.toUpperCase()}</Text>
       </View>
     </View>
   );
 }
 
-/** Circular translucent button for the header's action slot. */
+/** Round tinted button for the header's action slot (e.g. "+"). */
 export function HeaderAction({ icon, onPress }: { icon: string; onPress: () => void }) {
   return (
     <TouchableOpacity onPress={onPress} style={styles.circleBtn} hitSlop={8} activeOpacity={0.7}>
-      <Icon name={icon} size={14} color="#fff" />
+      <Icon name={icon} size={13} color={VIOLET} />
     </TouchableOpacity>
   );
 }
@@ -110,60 +106,46 @@ export function HeaderAction({ icon, onPress }: { icon: string; onPress: () => v
 const styles = StyleSheet.create({
   header: {
     // paddingTop is applied inline from the live safe-area inset.
-    paddingBottom: spacing.lg,
+    backgroundColor: colors.bgCard,
+    paddingBottom: spacing.md,
     paddingHorizontal: spacing.lg,
-    borderBottomLeftRadius: radii.xxl,
-    borderBottomRightRadius: radii.xxl,
-    overflow: 'hidden',
-    ...shadow.md,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
   },
-  headerCompact: { paddingBottom: spacing.md },
-  bloom: {
-    position: 'absolute',
-    top: -110,
-    right: -60,
-    width: 240,
-    height: 240,
-    borderRadius: 120,
-    backgroundColor: 'rgba(255,255,255,0.14)',
-  },
-  row: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  menuBtn: { width: 34, height: 34, justifyContent: 'center', gap: 4 },
-  hamburgerLine: { width: 18, height: 2, borderRadius: 2, backgroundColor: '#fff' },
+  headerCompact: { paddingBottom: spacing.sm },
+  row: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  backBtn: { width: 30, height: 30, justifyContent: 'center' },
   titleWrap: { flex: 1 },
-  title: {
-    fontSize: font.xl,
-    fontWeight: weight.heavy,
-    color: '#fff',
-    letterSpacing: tracking.tight,
-  },
-  subtitle: {
-    fontSize: font.sm,
-    color: 'rgba(255,255,255,0.82)',
-    marginTop: 1,
-    fontWeight: weight.medium,
-  },
-  actionSlot: { minWidth: 34, alignItems: 'flex-end' },
+  title: { fontSize: font.xl, fontWeight: weight.heavy, color: NAVY, letterSpacing: tracking.tight },
+  subtitle: { fontSize: font.xs, color: colors.textMuted, marginTop: 1, fontWeight: weight.medium },
+  actionSlot: { alignItems: 'flex-end' },
+  // Same three lines, same size and corner as the client home's menu.
+  menuBtn: { width: 28, height: 28, justifyContent: 'center', gap: 4, alignItems: 'flex-end' },
+  menuLine: { width: 17, height: 2, borderRadius: 1, backgroundColor: NAVY },
   circleBtn: {
-    width: 34, height: 34, borderRadius: radii.full,
-    backgroundColor: 'rgba(255,255,255,0.22)',
+    width: 32, height: 32, borderRadius: radii.full,
+    backgroundColor: VIOLET_TINT,
     alignItems: 'center', justifyContent: 'center',
-    borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.3)',
   },
-  rail: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.lg },
-  glass: {
+  rail: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md },
+  stat: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 7,
-    backgroundColor: 'rgba(255,255,255,0.18)',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,255,255,0.28)',
+    gap: spacing.sm,
+    backgroundColor: '#FAF7FF',
+    borderWidth: 1,
+    borderColor: VIOLET_TINT,
     borderRadius: radii.md,
-    paddingVertical: spacing.sm + 1,
+    paddingVertical: spacing.sm,
     paddingHorizontal: spacing.md,
   },
-  glassText: { flex: 1, minWidth: 0 },
-  glassValue: { fontSize: font.regular, fontWeight: weight.heavy, color: '#fff', letterSpacing: tracking.tight },
-  glassLabel: { fontSize: font.micro, fontWeight: weight.bold, color: 'rgba(255,255,255,0.75)', letterSpacing: tracking.caps },
+  statIcon: {
+    width: 24, height: 24, borderRadius: 8,
+    backgroundColor: VIOLET_TINT,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  statText: { flex: 1, minWidth: 0 },
+  statValue: { fontSize: font.regular, fontWeight: weight.heavy, color: NAVY, letterSpacing: tracking.tight },
+  statLabel: { fontSize: font.micro, fontWeight: weight.bold, color: colors.textMuted, letterSpacing: tracking.caps },
 });

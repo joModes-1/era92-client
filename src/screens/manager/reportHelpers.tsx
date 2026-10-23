@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback, ReactNode } from 'react';
+import React, { useState, useCallback, ReactNode } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import { View, Text, StyleSheet, ScrollView, RefreshControl } from 'react-native';
 import { colors, radii, font, spacing, weight, tracking, shadow } from '../../theme';
 import Badge from '../../components/Badge';
@@ -50,7 +51,11 @@ export function ReportScreen({
     setLoaded(true);
   }, [load]);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  // Load on every visit, not just the first: drawer screens stay mounted, so
+  // a once-only load showed stale figures when the user came back (Loyalty
+  // still showing points already spent on a booking, a report missing
+  // today's washes).
+  useFocusEffect(useCallback(() => { fetchData(); }, [fetchData]));
 
   const onRefresh = async () => {
     setRefreshing(true);

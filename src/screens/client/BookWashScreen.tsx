@@ -13,8 +13,6 @@ import Icon from '../../components/Icon';
 import ComponentButton1 from '../../components/buttons/ComponentButton1';
 import ComponentButton2 from '../../components/buttons/ComponentButton2';
 import { artFor } from './serviceArt';
-import { pointsForAmount } from './PointsSheet';
-import { markPaidWithPoints } from './paymentToast';
 
 /**
  * The client's own "pick a service, describe the car, confirm" flow —
@@ -85,6 +83,14 @@ export default function BookWashScreen() {
     })();
   }, [branchId]);
 
+  // "Redeem points": the client's real balance and the owner's point value,
+  // so the confirm step can say exactly what the points cover.
+  const [pointsInfo, setPointsInfo] = useState<{ balance: number; point_value_ugx: number } | null>(null);
+  useEffect(() => {
+    if (!payWithPoints) return;
+    api.clientPoints().then(setPointsInfo).catch(() => setPointsInfo(null));
+  }, [payWithPoints]);
+
   const vehicleClass = useMemo(
     () => vehicleClasses.find((v: any) => v.id === vcId),
     [vehicleClasses, vcId]
@@ -100,6 +106,18 @@ export default function BookWashScreen() {
 
   const ugx = (n: any) => Number(n || 0).toLocaleString();
   const canContinue = !!vcId && !!svcId;
+
+  // The same arithmetic the server applies at booking: only the points the
+  // price needs are spent, never more; if they fall short the rest is owed.
+  const pointsPlan = useMemo(() => {
+    const price = Number(service?.price_ugx || 0);
+    const pv = Number(pointsInfo?.point_value_ugx || 0);
+    const balance = Number(pointsInfo?.balance || 0);
+    if (!payWithPoints || pv <= 0 || balance <= 0 || price <= 0) return null;
+    const used = Math.min(balance, Math.ceil(price / pv));
+    const value = Math.min(price, used * pv);
+    return { used, value, due: price - value };
+  }, [payWithPoints, pointsInfo, service?.price_ugx]);
   const art = artFor(service?.name || vehicleClass?.name || '');
 
   const submit = async () => {
@@ -114,18 +132,24 @@ export default function BookWashScreen() {
         use_free_wash: useFreeWash || undefined,
         use_promo: usePromo || undefined,
         use_promo_free: usePromoFree || undefined,
+        // The server deducts the points now and works out what is still owed.
+        use_points: payWithPoints || undefined,
       });
-      if (payWithPoints && booked?.wash_id) markPaidWithPoints(booked.wash_id);
-      // The progress tracker lives on the home screen itself now, not a
-      // separate page — popToTop() dismisses this whole modal stack
-      // (BranchScan + BookWash) back to the drawer, where ClientHome's own
-      // polling picks up the freshly booked wash immediately.
+      void booked;
+      // The progress tracker, the payment popup and "Cancel booking" all live
+      // on the home screen. popToTop() dismisses the booking modals; the
+      // navigate then makes sure the client lands on home — booking can be
+      // started from Loyalty ("Redeem points"), and popping alone used to
+      // leave them there, never seeing their booking.
       navigation.popToTop();
+      navigation.navigate('App', { screen: 'Active Wash' });
     } catch (e: any) {
       // A credit spent elsewhere between screens (e.g. another device) is
       // the one failure worth falling back from rather than dead-ending —
       // everything else is a genuine "try again" error.
-      if (useFreeWash && /NO_CREDITS/i.test(String(e?.message || e?.code || ''))) {
+      if (payWithPoints && /NO_POINTS|POINTS_DISABLED|POINTS_NOT_SPENDABLE/i.test(String(e?.code || ''))) {
+        alert('Points not available', e.message || 'You have no points to use right now. You can still book and pay normally.');
+      } else if (useFreeWash && /NO_CREDITS/i.test(String(e?.message || e?.code || ''))) {
         alert(
           'No free wash available',
           'This credit is no longer available. You can still book and pay normally.'
@@ -216,7 +240,11 @@ export default function BookWashScreen() {
                 <View style={s.freeRow}>
                   <Icon name="award" size={13} color="#fff" />
                   <Text style={s.freeText}>
-                    Paying with points — {pointsForAmount(Number(service?.price_ugx || 0)).toLocaleString()} points
+                    {!pointsPlan
+                      ? 'Paying with points — checking your balance…'
+                      : pointsPlan.due === 0
+                        ? `Your ${pointsPlan.used.toLocaleString()} points cover this wash`
+                        : `${pointsPlan.used.toLocaleString()} points (UGX ${ugx(pointsPlan.value)}) — you pay UGX ${ugx(pointsPlan.due)}`}
                   </Text>
                 </View>
               ) : usePromo ? (

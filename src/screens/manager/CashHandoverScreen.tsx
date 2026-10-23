@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, RefreshControl, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, RefreshControl } from 'react-native';
 import { api } from '../../api';
 import { useAuth } from '../../api/AuthContext';
 import { colors, radii, font, spacing, weight, tracking } from '../../theme';
@@ -8,62 +8,58 @@ import Badge from '../../components/Badge';
 import ScreenHeader, { HeaderStat } from '../../components/ScreenHeader';
 import GradientButton from '../../components/GradientButton';
 import { useAppAlert } from '../../components/AppAlert';
-import {
-  Surface, SectionHeader, EmptyState, SkeletonList, Field, FormSheet, initials,
-} from '../../components/ui';
+import { Surface, SectionHeader, EmptyState, SkeletonList, Field, FormSheet, initials } from '../../components/ui';
+
+/**
+ * Cash Handover — on the worker wallet.
+ *
+ * Every cash wash puts the worker's wallet in the red by the cash they took
+ * minus their commission (server: modules/wallet). This screen lists who
+ * owes what and lets the person receiving the notes confirm it — partly or
+ * fully, never more than is owed. Confirming moves the wallet back up.
+ *
+ * It used to "close the worker's shift" with a counted amount. That never
+ * touched the wallet, so a worker who had handed everything in still showed
+ * as owing it. Shifts carry on as a report; the wallet is the money.
+ *
+ * A manager sees their own branch's workers. An org admin sees every branch
+ * — and can confirm too, which is the only way a manager's own cash gets
+ * confirmed (nobody confirms their own).
+ */
 
 const ugx = (n: any) => Number(n || 0).toLocaleString();
-const today = () => new Date().toISOString().slice(0, 10);
 
-/** Cash held past a full day is the org admin's risk line, not just a delay. */
-const OVERDUE_HOURS = 24;
-
-/** Cash the worker is holding right now — live for open days, final once closed. */
-function heldBy(s: any): number {
-  return Number(s.status === 'closed' ? s.expected_cash_ugx : s.live_expected_cash_ugx || 0);
-}
-
-function ageLabel(hours: number) {
-  if (hours < 1) return 'Just started';
-  if (hours < 24) return `${Math.floor(hours)}h`;
-  const d = Math.floor(hours / 24);
-  return `${d} day${d === 1 ? '' : 's'}`;
+function sinceLabel(iso?: string | null) {
+  if (!iso) return 'never handed in';
+  const h = (Date.now() - new Date(iso).getTime()) / 3600000;
+  if (h < 1) return 'handed in just now';
+  if (h < 24) return `last handed in ${Math.floor(h)}h ago`;
+  const d = Math.floor(h / 24);
+  return `last handed in ${d} day${d === 1 ? '' : 's'} ago`;
 }
 
 export default function CashHandoverScreen() {
   const alert = useAppAlert();
   const { actor } = useAuth();
-  // An org admin oversees several branches and does not stand at a till; a
-  // manager is the person who physically takes the notes. Same data, two
-  // different jobs — so the org admin gets a read-only position view broken
-  // down by branch, and the manager keeps the collect action.
   const isOrgAdmin = actor?.role === 'orgadmin';
 
-  const [shifts, setShifts] = useState<any[]>([]);
-  const [position, setPosition] = useState<{ holding: any[]; collected_today: any[] }>({
-    holding: [], collected_today: [],
-  });
+  const [staff, setStaff] = useState<any[]>([]);
+  const [totals, setTotals] = useState({ owed: 0, today: 0 });
   const [loaded, setLoaded] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
   const [target, setTarget] = useState<any>(null);
-  const [counted, setCounted] = useState('');
-  const [notes, setNotes] = useState('');
+  const [amount, setAmount] = useState('');
+  const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
-    if (isOrgAdmin) {
-      try {
-        const data = await api.cashPosition();
-        setPosition({ holding: data?.holding || [], collected_today: data?.collected_today || [] });
-      } catch {}
-      return;
-    }
     try {
-      const data = await api.listShifts({ from: today(), to: today() });
-      setShifts(Array.isArray(data) ? data : []);
+      const data = await api.listWallets();
+      setStaff(data?.staff || []);
+      setTotals({ owed: Number(data?.total_owed_ugx || 0), today: Number(data?.handed_in_today_ugx || 0) });
     } catch {}
-  }, [isOrgAdmin]);
+  }, []);
 
   useEffect(() => { (async () => { await load(); setLoaded(true); })(); }, [load]);
 
@@ -73,112 +69,96 @@ export default function CashHandoverScreen() {
     setRefreshing(false);
   };
 
-  const openCount = (s: any) => {
+  const openReceive = (s: any) => {
     setTarget(s);
-    setCounted('');
-    setNotes('');
+    setAmount(String(s.owes_ugx));
+    setNote('');
   };
 
   const submit = async () => {
     if (!target) return;
-    const n = parseInt(counted, 10);
-    if (isNaN(n) || n < 0) {
-      alert('Enter an amount', 'Type how much money you actually received.');
+    const n = parseInt(amount.replace(/[^\d]/g, ''), 10);
+    if (!n || n <= 0) {
+      alert('Enter an amount', 'Type how much money you received.');
+      return;
+    }
+    if (n > target.owes_ugx) {
+      alert('More than they owe', `${target.full_name} only owes UGX ${ugx(target.owes_ugx)}.`);
       return;
     }
     setSaving(true);
     try {
-      await api.closeShift(target.id, n, notes.trim() || undefined);
-      const diff = n - heldBy(target);
+      const res = await api.receiveCash(target.staff_id, n, note.trim() || undefined);
       setTarget(null);
       await load();
-      // Not "their day is closed" — the worker carries on and a fresh shift
-      // opens straight away. Saying the day ended made a mid-shift handover
-      // read as though it had sent the worker home.
+      const still = Number(res?.owes_ugx || 0);
       alert(
         'Money received',
-        diff === 0
-          ? `You have UGX ${n.toLocaleString()} from ${target.worker_name}. It balances exactly.\n\nThey can keep working — anything they take from now on is counted separately.`
-          : `You have UGX ${n.toLocaleString()} from ${target.worker_name}.\n\n${Math.abs(diff).toLocaleString()} UGX ${diff < 0 ? 'SHORT' : 'EXTRA'} — this shows on the Cash Variance report.`
+        still === 0
+          ? `UGX ${ugx(n)} from ${target.full_name}. They owe nothing now.`
+          : `UGX ${ugx(n)} from ${target.full_name}. They still owe UGX ${ugx(still)}.`
       );
     } catch (e: any) {
-      const msg = String(e?.message || '');
-      if (/in-progress|IN_PROGRESS/i.test(msg)) {
-        alert('They still have a car', 'This worker has a car still being washed. It must be finished first.');
-      } else if (/CANNOT_CLOSE_OWN/i.test(msg)) {
-        alert('Not your own day', 'You cannot close your own day. An org admin has to do it.');
-      } else {
-        alert('Could not close', msg);
-      }
+      const code = String(e?.code || '');
+      if (code === 'CANNOT_CONFIRM_OWN') alert('Not your own cash', 'Someone above you has to confirm the cash you collected.');
+      else if (code === 'MORE_THAN_OWED') alert('More than they owe', e.message);
+      else if (code === 'NOTHING_OWED') alert('Nothing owed', 'This person has already handed everything in.');
+      else alert('Could not record it', e?.message || 'Try again.');
     }
     setSaving(false);
   };
 
+  const owing = staff.filter((s) => s.owes_ugx > 0);
+  const handedToday = staff.filter((s) => s.handed_in_today_ugx > 0);
+  const clear = staff.filter((s) => s.owes_ugx === 0 && s.handed_in_today_ugx === 0);
+
+  // An org admin thinks in branches; a manager has one.
+  const byBranch = useMemo(() => {
+    const map = new Map<string, { name: string; rows: any[]; total: number }>();
+    owing.forEach((s) => {
+      const key = s.branch_id || 'none';
+      if (!map.has(key)) map.set(key, { name: s.branch_name || 'No branch', rows: [], total: 0 });
+      const g = map.get(key)!;
+      g.rows.push(s);
+      g.total += s.owes_ugx;
+    });
+    return [...map.values()].sort((a, b) => b.total - a.total);
+  }, [owing]);
+
   if (!loaded) {
     return (
       <View style={styles.container}>
-        <ScreenHeader title={isOrgAdmin ? 'Cash Position' : 'Cash Handover'} />
+        <ScreenHeader title="Cash Handover" />
         <ScrollView contentContainerStyle={styles.body}><SkeletonList rows={4} showHeader={false} /></ScrollView>
       </View>
     );
   }
 
-  return isOrgAdmin
-    ? <OrgAdminView position={position} refreshing={refreshing} onRefresh={onRefresh} />
-    : (
-      <ManagerView
-        shifts={shifts}
-        refreshing={refreshing}
-        onRefresh={onRefresh}
-        openCount={openCount}
-        target={target}
-        setTarget={setTarget}
-        counted={counted}
-        setCounted={setCounted}
-        notes={notes}
-        setNotes={setNotes}
-        saving={saving}
-        submit={submit}
-      />
-    );
-}
-
-// ═══════════════════════════════════════════════════════════════
-// Org admin — oversight. No collect button: they are not at the till.
-// ═══════════════════════════════════════════════════════════════
-
-function OrgAdminView({
-  position, refreshing, onRefresh,
-}: { position: { holding: any[]; collected_today: any[] }; refreshing: boolean; onRefresh: () => void }) {
-  const holding = position.holding.filter((h) => Number(h.held_ugx || 0) > 0);
-  const idle = position.holding.filter((h) => Number(h.held_ugx || 0) <= 0);
-
-  const heldTotal = holding.reduce((s, h) => s + Number(h.held_ugx || 0), 0);
-  const collectedTotal = position.collected_today.reduce((s, r) => s + Number(r.collected_ugx || 0), 0);
-  const overdue = holding.filter((h) => Number(h.hours_held || 0) >= OVERDUE_HOURS);
-
-  // Group by branch — an org admin thinks in branches, not in individual
-  // shift rows, and the per-branch subtotal is the number they act on.
-  const byBranch = useMemo(() => {
-    const map = new Map<string, { name: string; code: string; rows: any[]; total: number; overdue: number }>();
-    holding.forEach((h) => {
-      const key = h.branch_id;
-      if (!map.has(key)) {
-        map.set(key, { name: h.branch_name, code: h.branch_code, rows: [], total: 0, overdue: 0 });
-      }
-      const g = map.get(key)!;
-      g.rows.push(h);
-      g.total += Number(h.held_ugx || 0);
-      if (Number(h.hours_held || 0) >= OVERDUE_HOURS) g.overdue += 1;
-    });
-    return [...map.values()].sort((a, b) => b.total - a.total);
-  }, [holding]);
+  const renderOwing = (s: any) => (
+    <Surface key={s.staff_id} elevation="sm" style={styles.card}>
+      <View style={styles.head}>
+        <View style={styles.avatar}><Text style={styles.avatarText}>{initials(s.full_name)}</Text></View>
+        <View style={styles.who}>
+          <Text style={styles.name} numberOfLines={1}>{s.full_name}</Text>
+          <Text style={styles.meta} numberOfLines={1}>
+            {s.role === 'manager' ? 'Manager · ' : ''}{sinceLabel(s.last_handover_at)}
+          </Text>
+        </View>
+        <Badge label="Owes cash" tone="warning" dot small />
+      </View>
+      <View style={styles.amountRow}>
+        <Text style={styles.amountLabel}>SHOULD HAND IN</Text>
+        <Text style={styles.amountValue}>UGX {ugx(s.owes_ugx)}</Text>
+      </View>
+      <GradientButton title="Receive money" onPress={() => openReceive(s)} icon="hand-holding-usd" full />
+    </Surface>
+  );
 
   return (
     <View style={styles.container}>
-      <ScreenHeader title="Cash Position" subtitle="Across every branch">
-        <HeaderStat label="Out with workers" value={ugx(heldTotal)} icon="hourglass-half" />
-        <HeaderStat label="In today" value={ugx(collectedTotal)} icon="check-circle" />
+      <ScreenHeader title="Cash Handover" subtitle={isOrgAdmin ? 'Every branch' : 'Your branch'}>
+        <HeaderStat label="Still to collect" value={ugx(totals.owed)} icon="hourglass-half" />
+        <HeaderStat label="Handed in today" value={ugx(totals.today)} icon="check-circle" />
       </ScreenHeader>
 
       <ScrollView
@@ -187,358 +167,96 @@ function OrgAdminView({
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} />}
       >
-        {/* The one thing an owner should be told without asking */}
-        <Surface
-          elevation="sm"
-          tone={overdue.length > 0 ? colors.errorSoft : heldTotal > 0 ? colors.warningSoft : colors.successSoft}
-          borderless
-          style={styles.banner}
-        >
-          <Icon
-            name={overdue.length > 0 ? 'exclamation-triangle' : heldTotal > 0 ? 'hourglass-half' : 'check-circle'}
-            size={14}
-            color={overdue.length > 0 ? colors.error : heldTotal > 0 ? colors.warning : colors.success}
-          />
-          <View style={{ flex: 1 }}>
-            <Text
-              style={[
-                styles.bannerTitle,
-                { color: overdue.length > 0 ? colors.error : heldTotal > 0 ? colors.warning : colors.success },
-              ]}
-            >
-              {overdue.length > 0
-                ? `UGX ${ugx(overdue.reduce((s, h) => s + Number(h.held_ugx || 0), 0))} held over 24 hours`
-                : heldTotal > 0
-                ? `UGX ${ugx(heldTotal)} still with ${holding.length} worker${holding.length === 1 ? '' : 's'}`
-                : 'No cash outstanding'}
-            </Text>
-            <Text style={styles.bannerSub}>
-              {overdue.length > 0
-                ? `${overdue.length} worker${overdue.length === 1 ? '' : 's'} — your branch managers collect this`
-                : heldTotal > 0
-                ? 'Normal — managers collect at the end of each day'
-                : 'Every worker has handed in'}
-            </Text>
-          </View>
-        </Surface>
+        {staff.length === 0 ? (
+          <Surface elevation="sm" padded="lg">
+            <EmptyState icon="coins" title="No staff yet" message="Workers appear here once they have an account." />
+          </Surface>
+        ) : (
+          <>
+            {owing.length === 0 ? (
+              <Surface elevation="sm" tone={colors.successSoft} borderless style={styles.banner}>
+                <Icon name="check-circle" size={14} color={colors.success} />
+                <Text style={[styles.bannerTitle, { color: colors.success }]}>Nobody owes any cash</Text>
+              </Surface>
+            ) : isOrgAdmin ? (
+              byBranch.map((g) => (
+                <View key={g.name}>
+                  <SectionHeader title={`${g.name} · UGX ${ugx(g.total)}`} count={g.rows.length} icon="building" />
+                  <View style={{ gap: spacing.sm }}>{g.rows.map(renderOwing)}</View>
+                </View>
+              ))
+            ) : (
+              <View>
+                <SectionHeader title="Money to collect" count={owing.length} icon="hourglass-half" />
+                <View style={{ gap: spacing.sm }}>{owing.map(renderOwing)}</View>
+              </View>
+            )}
 
-        {/* Money out, grouped by branch */}
-        {byBranch.length > 0 && (
-          <View>
-            <SectionHeader title="Money still with workers" count={holding.length} icon="hourglass-half" />
-            <View style={{ gap: spacing.sm }}>
-              {byBranch.map((g) => (
-                <Surface key={g.code} elevation="sm" style={styles.branchCard}>
-                  <View style={styles.branchHead}>
-                    <View style={styles.codeTag}><Text style={styles.codeTagText}>{g.code}</Text></View>
-                    <Text style={styles.branchName} numberOfLines={1}>{g.name}</Text>
-                    <Text style={styles.branchTotal}>{ugx(g.total)}</Text>
-                  </View>
-
-                  {g.rows
-                    .slice()
-                    .sort((a, b) => Number(b.held_ugx) - Number(a.held_ugx))
-                    .map((h) => {
-                      const hrs = Number(h.hours_held || 0);
-                      const late = hrs >= OVERDUE_HOURS;
-                      return (
-                        <View key={h.id} style={styles.workerRow}>
-                          <View style={[styles.avatarSm, late && styles.avatarLate]}>
-                            <Text style={[styles.avatarSmText, late && { color: colors.error }]}>
-                              {initials(h.worker_name)}
-                            </Text>
-                          </View>
-                          <View style={{ flex: 1 }}>
-                            <Text style={styles.workerName} numberOfLines={1}>{h.worker_name}</Text>
-                            <Text style={styles.workerMeta} numberOfLines={1}>
-                              {Number(h.settled_count || 0)} car{Number(h.settled_count) === 1 ? '' : 's'} · holding {ageLabel(hrs)}
-                            </Text>
-                          </View>
-                          {late && <Badge label="Over 24h" tone="error" small />}
-                          <Text style={styles.workerAmount}>{ugx(h.held_ugx)}</Text>
-                        </View>
-                      );
-                    })}
-
-                  {g.overdue > 0 && (
-                    <Text style={styles.branchWarn}>
-                      {g.overdue} of these {g.overdue === 1 ? 'has' : 'have'} been held over a day — ask this branch's manager.
-                    </Text>
-                  )}
+            {handedToday.length > 0 && (
+              <View>
+                <SectionHeader title="Handed in today" count={handedToday.length} icon="check-circle" />
+                <Surface elevation="sm" padded="lg" style={{ gap: spacing.md }}>
+                  {handedToday.map((s) => (
+                    <View key={s.staff_id} style={styles.doneRow}>
+                      <View style={[styles.avatar, styles.avatarDone]}><Icon name="check" size={12} color={colors.success} /></View>
+                      <Text style={styles.doneName} numberOfLines={1}>{s.full_name}</Text>
+                      <Text style={styles.doneAmount}>UGX {ugx(s.handed_in_today_ugx)}</Text>
+                    </View>
+                  ))}
                 </Surface>
-              ))}
-            </View>
-          </View>
-        )}
+              </View>
+            )}
 
-        {/* Money in, today, per branch */}
-        <View>
-          <SectionHeader title="Handed in today" count={position.collected_today.length} icon="check-circle" />
-          {position.collected_today.length === 0 ? (
-            <Surface elevation="sm" padded="lg">
-              <EmptyState icon="coins" title="Nothing handed in yet" message="Collections appear here as managers record them." />
-            </Surface>
-          ) : (
-            <Surface elevation="sm" padded="lg" style={{ gap: spacing.md }}>
-              {position.collected_today.map((r: any, i: number) => {
-                const v = Number(r.variance_ugx || 0);
-                return (
-                  <View key={i} style={styles.collectRow}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.collectBranch} numberOfLines={1}>{r.branch_name}</Text>
-                      <Text style={styles.collectMeta}>
-                        {r.handovers} handover{Number(r.handovers) === 1 ? '' : 's'}
-                      </Text>
-                    </View>
-                    <View style={{ alignItems: 'flex-end' }}>
-                      <Text style={styles.collectAmount}>{ugx(r.collected_ugx)}</Text>
-                      {v !== 0 && (
-                        <Text style={[styles.collectVar, { color: v < 0 ? colors.error : colors.warning }]}>
-                          {Math.abs(v).toLocaleString()} {v < 0 ? 'short' : 'extra'}
-                        </Text>
-                      )}
-                    </View>
-                  </View>
-                );
-              })}
-            </Surface>
-          )}
-        </View>
-
-        {/* Workers who are on shift but have taken nothing — context, not alarm */}
-        {idle.length > 0 && (
-          <View>
-            <SectionHeader title="On shift, no cash yet" count={idle.length} icon="user-clock" />
-            <Surface elevation="sm" padded="lg">
-              <Text style={styles.idleText} numberOfLines={3}>
-                {idle.map((h) => h.worker_name).join(', ')}
-              </Text>
-            </Surface>
-          </View>
+            {clear.length > 0 && (
+              <View>
+                <SectionHeader title="Nothing owed" count={clear.length} icon="user-check" />
+                <Surface elevation="sm" padded="lg">
+                  <Text style={styles.idleText} numberOfLines={4}>{clear.map((s) => s.full_name).join(', ')}</Text>
+                </Surface>
+              </View>
+            )}
+          </>
         )}
 
         <View style={styles.hint}>
           <Icon name="info-circle" size={11} color={colors.textMuted} />
           <Text style={styles.hintText}>
-            This is a view only. Branch managers physically receive the cash and record it on their own
-            Cash Handover screen — that keeps one person accountable per handover.
+            A worker keeps their commission out of cash they collect, so they owe the rest. Mobile money and points washes owe nothing.
           </Text>
         </View>
-      </ScrollView>
-    </View>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════
-// Manager — the person who actually takes the money.
-// ═══════════════════════════════════════════════════════════════
-
-function ManagerView({
-  shifts, refreshing, onRefresh, openCount,
-  target, setTarget, counted, setCounted, notes, setNotes, saving, submit,
-}: any) {
-  // A worker's day does not end at a handover: closing their shift settles
-  // the cash, and a fresh shift opens immediately so they can keep washing.
-  // That new shift then accrues its own cash, which is genuinely still with
-  // them — but showing it identically to "has not handed over at all" made a
-  // completed handover look like it had failed. These are separate states
-  // and the screen now says which is which.
-  const received = shifts.filter((s: any) => s.status === 'closed');
-  const handedOverWorkerIds = new Set(received.map((s: any) => s.worker_id));
-
-  const pending = shifts.filter((s: any) => s.status !== 'closed');
-  // Cash earned since a handover earlier today, vs cash never handed over.
-  const sinceHandover = pending.filter((s: any) => handedOverWorkerIds.has(s.worker_id));
-  const notYetHandedOver = pending.filter((s: any) => !handedOverWorkerIds.has(s.worker_id));
-
-  const owed = pending.reduce((sum: number, s: any) => sum + heldBy(s), 0);
-  const collected = received.reduce((sum: number, s: any) => sum + Number(s.counted_cash_ugx || 0), 0);
-
-  const renderPending = (s: any, afterHandover = false) => {
-    const held = heldBy(s);
-    return (
-      <Surface key={s.id} elevation="sm" style={styles.card}>
-        <View style={styles.head}>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>{initials(s.worker_name)}</Text>
-          </View>
-          <View style={styles.who}>
-            <Text style={styles.name} numberOfLines={1}>{s.worker_name}</Text>
-            <Text style={styles.meta} numberOfLines={1}>
-              {Number(s.settled_count || 0)} car{Number(s.settled_count) === 1 ? '' : 's'} · {s.branch_name}
-            </Text>
-          </View>
-          <Badge
-            label={
-              s.status === 'pending_close'
-                ? 'Ready to hand in'
-                : afterHandover
-                ? 'Since handover'
-                : 'Still working'
-            }
-            tone={s.status === 'pending_close' ? 'warning' : afterHandover ? 'info' : 'success'}
-            dot
-            small
-          />
-        </View>
-
-        <View style={styles.amountRow}>
-          <Text style={styles.amountLabel}>
-            {afterHandover ? 'EARNED SINCE HANDOVER' : 'SHOULD HAND IN'}
-          </Text>
-          <Text style={styles.amountValue}>UGX {ugx(held)}</Text>
-        </View>
-
-        {/* The label has to describe the action being started, not claim it
-            already happened — "I received the money" read as a statement of
-            fact on a worker whose cash was still in their pocket. */}
-        {held > 0 ? (
-          <GradientButton
-            title="Receive money from worker"
-            onPress={() => openCount(s)}
-            icon="hand-holding-usd"
-            full
-          />
-        ) : (
-          <Text style={styles.nothingDue}>
-            Nothing to collect yet — no cash taken on this shift.
-          </Text>
-        )}
-      </Surface>
-    );
-  };
-
-  const renderReceived = (s: any) => {
-    const variance = Number(s.variance_ugx || 0);
-    return (
-      <Surface key={s.id} elevation="sm" style={styles.card}>
-        <View style={styles.head}>
-          <View style={[styles.avatar, styles.avatarDone]}>
-            <Icon name="check" size={13} color={colors.success} />
-          </View>
-          <View style={styles.who}>
-            <Text style={styles.name} numberOfLines={1}>{s.worker_name}</Text>
-            <Text style={styles.meta}>
-              You received UGX {ugx(s.counted_cash_ugx)}
-              {s.closed_at ? ` · ${new Date(s.closed_at).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}` : ''}
-            </Text>
-          </View>
-          {variance === 0 ? (
-            <Badge label="Balanced" tone="success" small />
-          ) : (
-            <Badge
-              label={`${Math.abs(variance).toLocaleString()} ${variance < 0 ? 'short' : 'extra'}`}
-              tone={variance < 0 ? 'error' : 'warning'}
-              small
-            />
-          )}
-        </View>
-      </Surface>
-    );
-  };
-
-  return (
-    <View style={styles.container}>
-      <ScreenHeader title="Cash Handover" subtitle="Today">
-        <HeaderStat label="Still to collect" value={ugx(owed)} icon="hourglass-half" />
-        <HeaderStat label="Collected" value={ugx(collected)} icon="check-circle" />
-      </ScreenHeader>
-
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={styles.body}
-        showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} />}
-      >
-        {shifts.length === 0 ? (
-          <Surface elevation="sm" padded="lg">
-            <EmptyState icon="coins" title="Nobody has worked today" message="Worker days appear here as they start." />
-          </Surface>
-        ) : (
-          <>
-            {notYetHandedOver.length > 0 && (
-              <View>
-                <SectionHeader title="Money to collect" count={notYetHandedOver.length} icon="hourglass-half" />
-                <View style={{ gap: spacing.sm }}>{notYetHandedOver.map((x: any) => renderPending(x))}</View>
-              </View>
-            )}
-
-            {/* Kept apart from the above so a completed handover does not
-                look like it failed: this is new cash, earned after the
-                worker already handed in once today. */}
-            {sinceHandover.length > 0 && (
-              <View>
-                <SectionHeader title="Earned since handing in" count={sinceHandover.length} icon="redo" />
-                <View style={{ gap: spacing.sm }}>{sinceHandover.map((x: any) => renderPending(x, true))}</View>
-              </View>
-            )}
-
-            {received.length > 0 && (
-              <View>
-                <SectionHeader title="Money received" count={received.length} icon="check-circle" />
-                <View style={{ gap: spacing.sm }}>{received.map(renderReceived)}</View>
-              </View>
-            )}
-          </>
-        )}
       </ScrollView>
 
       <FormSheet
         visible={!!target}
         onClose={() => setTarget(null)}
         title="Receive money"
-        subtitle={target?.worker_name}
+        subtitle={target?.full_name}
         submitLabel="Confirm I have the money"
         onSubmit={submit}
         submitting={saving}
       >
         {target ? (
           <Surface elevation="none" tone={colors.bgSunken} borderless style={styles.expected}>
-            <Text style={styles.expectedLabel}>THEY SHOULD HAND IN</Text>
-            <Text style={styles.expectedValue}>UGX {ugx(heldBy(target))}</Text>
+            <Text style={styles.expectedLabel}>THEY OWE</Text>
+            <Text style={styles.expectedValue}>UGX {ugx(target.owes_ugx)}</Text>
           </Surface>
         ) : null}
-
         <Field
-          label="Money you actually received"
+          label="Money you received"
           required
           prefix="UGX"
-          value={counted}
-          onChangeText={setCounted}
+          value={amount}
+          onChangeText={setAmount}
           keyboardType="numeric"
           placeholder="0"
+          hint="Less than they owe is fine — the rest stays on their account."
         />
-
-        {/* Live difference so a shortfall is obvious before confirming */}
-        {counted !== '' && target ? (
-          (() => {
-            const diff = (parseInt(counted, 10) || 0) - heldBy(target);
-            const tone = diff === 0 ? colors.success : diff < 0 ? colors.error : colors.warning;
-            const bg = diff === 0 ? colors.successSoft : diff < 0 ? colors.errorSoft : colors.warningSoft;
-            return (
-              <View style={[styles.diff, { backgroundColor: bg }]}>
-                <Icon
-                  name={diff === 0 ? 'check-circle' : diff < 0 ? 'arrow-down' : 'arrow-up'}
-                  size={12}
-                  color={tone}
-                />
-                <Text style={[styles.diffText, { color: tone }]}>
-                  {diff === 0
-                    ? 'Balances exactly'
-                    : `${Math.abs(diff).toLocaleString()} UGX ${diff < 0 ? 'short' : 'extra'}`}
-                </Text>
-              </View>
-            );
-          })()
-        ) : null}
-
         <Field
           label="Note"
-          value={notes}
-          onChangeText={setNotes}
-          placeholder="e.g. Short by 2,000 — will bring tomorrow"
+          value={note}
+          onChangeText={setNote}
+          placeholder="e.g. Will bring the rest tomorrow"
           multiline
-          hint="Recorded against this handover."
           style={{ marginBottom: 0 }}
         />
       </FormSheet>
@@ -553,54 +271,15 @@ const styles = StyleSheet.create({
 
   banner: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   bannerTitle: { fontSize: font.regular, fontWeight: weight.heavy, letterSpacing: tracking.tight },
-  bannerSub: { fontSize: font.xs, color: colors.textSecondary, marginTop: 1 },
-
-  branchCard: { gap: spacing.sm },
-  branchHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  codeTag: { backgroundColor: colors.ink[900], borderRadius: 5, paddingHorizontal: 6, paddingVertical: 2 },
-  codeTagText: { fontSize: font.micro, fontWeight: weight.black, color: '#fff', letterSpacing: tracking.caps },
-  branchName: { flex: 1, fontSize: font.regular, fontWeight: weight.heavy, color: colors.text, letterSpacing: tracking.tight },
-  branchTotal: { fontSize: font.regular, fontWeight: weight.black, color: colors.text, letterSpacing: tracking.tight },
-
-  workerRow: {
-    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
-    paddingTop: spacing.sm,
-    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.borderLight,
-  },
-  avatarSm: {
-    width: 28, height: 28, borderRadius: radii.full, backgroundColor: colors.primarySoft,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  avatarLate: { backgroundColor: colors.errorSoft },
-  avatarSmText: { fontSize: font.micro, fontWeight: weight.black, color: colors.primary },
-  workerName: { fontSize: font.sm, fontWeight: weight.bold, color: colors.text },
-  workerMeta: { fontSize: font.micro, color: colors.textMuted, marginTop: 1 },
-  workerAmount: { fontSize: font.sm, fontWeight: weight.black, color: colors.text, minWidth: 58, textAlign: 'right' },
-  branchWarn: { fontSize: font.micro, color: colors.error, fontWeight: weight.semibold, lineHeight: 15 },
-
-  collectRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  collectBranch: { fontSize: font.sm, fontWeight: weight.heavy, color: colors.text },
-  collectMeta: { fontSize: font.micro, color: colors.textMuted, marginTop: 1 },
-  collectAmount: { fontSize: font.regular, fontWeight: weight.black, color: colors.text, letterSpacing: tracking.tight },
-  collectVar: { fontSize: font.micro, fontWeight: weight.heavy, marginTop: 1 },
-
-  idleText: { fontSize: font.xs, color: colors.textSecondary, lineHeight: 18 },
-
-  hint: { flexDirection: 'row', alignItems: 'flex-start', gap: 7, paddingHorizontal: spacing.xs },
-  hintText: { flex: 1, fontSize: font.xs, color: colors.textMuted, lineHeight: 17 },
 
   card: { gap: spacing.md },
-  nothingDue: {
-    fontSize: font.xs, color: colors.textMuted,
-    textAlign: 'center', paddingVertical: spacing.sm,
-  },
   head: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   avatar: {
     width: 38, height: 38, borderRadius: radii.full,
     backgroundColor: colors.primarySoft,
     alignItems: 'center', justifyContent: 'center',
   },
-  avatarDone: { backgroundColor: colors.successSoft },
+  avatarDone: { backgroundColor: colors.successSoft, width: 28, height: 28 },
   avatarText: { fontSize: font.sm, fontWeight: weight.heavy, color: colors.primary },
   who: { flex: 1, gap: 2 },
   name: { fontSize: font.regular, fontWeight: weight.heavy, color: colors.text, letterSpacing: tracking.tight },
@@ -614,14 +293,16 @@ const styles = StyleSheet.create({
   amountLabel: { fontSize: font.micro, fontWeight: weight.heavy, color: colors.textMuted, letterSpacing: tracking.capsWide },
   amountValue: { fontSize: font.xl, fontWeight: weight.black, color: colors.text, letterSpacing: tracking.tight },
 
+  doneRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  doneName: { flex: 1, fontSize: font.sm, fontWeight: weight.bold, color: colors.text },
+  doneAmount: { fontSize: font.sm, fontWeight: weight.black, color: colors.success },
+
+  idleText: { fontSize: font.xs, color: colors.textSecondary, lineHeight: 18 },
+
+  hint: { flexDirection: 'row', alignItems: 'flex-start', gap: 7, paddingHorizontal: spacing.xs },
+  hintText: { flex: 1, fontSize: font.xs, color: colors.textMuted, lineHeight: 17 },
+
   expected: { alignItems: 'center', gap: 3, marginBottom: spacing.lg },
   expectedLabel: { fontSize: font.micro, fontWeight: weight.heavy, color: colors.textMuted, letterSpacing: tracking.capsWide },
   expectedValue: { fontSize: font.xxl, fontWeight: weight.black, color: colors.text, letterSpacing: tracking.display },
-
-  diff: {
-    flexDirection: 'row', alignItems: 'center', gap: 7,
-    borderRadius: radii.md, paddingVertical: spacing.md, paddingHorizontal: spacing.lg,
-    marginTop: -spacing.sm, marginBottom: spacing.lg,
-  },
-  diffText: { fontSize: font.sm, fontWeight: weight.heavy },
 });

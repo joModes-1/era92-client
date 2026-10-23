@@ -20,13 +20,18 @@ import { usePushNotifications } from './src/hooks/usePushNotifications';
 // splash hands straight over to a painted screen. Must run at module load,
 // before the first render.
 SplashScreen.preventAutoHideAsync().catch(() => {});
+SplashScreen.setOptions({ fade: true, duration: 250 });
 import WelcomeScreen from './src/screens/WelcomeScreen';
+import BrandSplash from './src/components/BrandSplash';
 import RegisterScreen from './src/screens/RegisterScreen';
 import ProfileScreen from './src/screens/shared/ProfileScreen';
 import ReportIssueScreen from './src/screens/shared/ReportIssueScreen';
 import AppDrawerContent from './src/components/AppDrawerContent';
 
 import WorkerHome from './src/screens/worker/WorkerHome';
+import AccountScreen from './src/screens/worker/AccountScreen';
+import WorkerPointsScreen from './src/screens/worker/PointsScreen';
+import LeaderboardScreen from './src/screens/worker/LeaderboardScreen';
 
 import DailyReportScreen from './src/screens/manager/DailyReportScreen';
 import WorkersReportScreen from './src/screens/manager/WorkersReportScreen';
@@ -49,7 +54,7 @@ import OrgDashboardScreen from './src/screens/orgadmin/DashboardScreen';
 import OrgBranchesScreen from './src/screens/orgadmin/BranchesScreen';
 import OrgCatalogueScreen from './src/screens/orgadmin/CatalogueScreen';
 import OrgPricesScreen from './src/screens/orgadmin/OrgPricesScreen';
-import LoyaltySettingsScreen from './src/screens/orgadmin/LoyaltySettingsScreen';
+import PointsSettingsScreen from './src/screens/orgadmin/PointsSettingsScreen';
 import CustomersScreen from './src/screens/orgadmin/CustomersScreen';
 import AuditLogScreen from './src/screens/orgadmin/AuditLogScreen';
 
@@ -78,6 +83,9 @@ function WorkerDrawer() {
   return (
     <Drawer.Navigator screenOptions={drawerScreenOptions} drawerContent={(p) => <AppDrawerContent {...p} />}>
       <Drawer.Screen name="Current Car" component={WorkerHome} />
+      <Drawer.Screen name="My Account" component={AccountScreen} />
+      <Drawer.Screen name="My Points" component={WorkerPointsScreen} />
+      <Drawer.Screen name="Leaderboard" component={LeaderboardScreen} />
       <Drawer.Screen name="Report a problem" component={ReportIssueScreen} />
       <Drawer.Screen name="Profile" component={ProfileScreen} />
     </Drawer.Navigator>
@@ -114,7 +122,7 @@ function OrgadminDrawer() {
       <Drawer.Screen name="Staff" component={StaffScreen} />
       <Drawer.Screen name="Catalogue" component={OrgCatalogueScreen} />
       <Drawer.Screen name="Prices" component={OrgPricesScreen} />
-      <Drawer.Screen name="Loyalty Settings" component={LoyaltySettingsScreen} />
+      <Drawer.Screen name="Points Settings" component={PointsSettingsScreen} />
       <Drawer.Screen name="Customers" component={CustomersScreen} />
       <Drawer.Screen name="Daily Report" component={DailyReportScreen} />
       <Drawer.Screen name="Performance" component={WorkersReportScreen} />
@@ -151,39 +159,49 @@ function ClientDrawer() {
       <Drawer.Screen name="Active Wash" component={ClientHome} />
       <Drawer.Screen name="History" component={HistoryScreen} />
       <Drawer.Screen name="Loyalty" component={LoyaltyScreen} />
-      <Drawer.Screen name="Ledger" component={LedgerScreen} />
+      <Drawer.Screen name="Points History" component={LedgerScreen} />
       <Drawer.Screen name="Report a problem" component={ReportIssueScreen} />
       <Drawer.Screen name="Profile" component={ProfileScreen} />
     </Drawer.Navigator>
   );
 }
 
+// Minimum time the branded splash stays up, so it reads as a deliberate
+// screen rather than a flicker. It also waits for session restore.
+const BRAND_SPLASH_MIN_MS = 1600;
+
 /**
- * There is one splash, and it is the native one.
+ * Two splashes that read as one.
  *
- * This used to render `BrandSplash` — the same gradient and wordmark, in
- * React — on top of the navigator for a fixed six seconds. That produced
- * two splashes back to back: Android's, then an almost identical JS one,
- * with a visible seam between them and six seconds of waiting after the app
- * was already usable.
- *
- * The native splash now carries the branding itself (a pre-rendered
- * `splash-branded.png` of that same gradient and wordmark, configured in
- * app.json). It is on screen from the moment the process starts — genuinely
- * before any JavaScript — and is dismissed by `hideAsync()` as soon as the
- * first real screen is ready. Nothing is held artificially.
+ * Android's splash is drawn by the OS before any JavaScript, and can only be
+ * a solid colour plus one centred icon. It uses the design's navy so it
+ * blends into `BrandSplash` — the full Figma splash (gradient, lockup,
+ * "Product of era92") — which takes over as soon as the native one is
+ * dismissed. The navigator renders underneath it, so when BrandSplash fades
+ * out there is a real screen behind it, never a blank frame. It stays only
+ * until session restore has settled and the minimum time has passed.
  */
 function Root() {
   const { loading } = useAuth();
+  const [minElapsed, setMinElapsed] = React.useState(false);
+  const [brandMounted, setBrandMounted] = React.useState(true);
 
-  // Release the native splash once session restore has settled, so it hands
-  // straight over to a painted screen rather than a blank frame.
+  // Hand over from the native splash straight away: BrandSplash is already
+  // painted underneath it, so there is nothing to wait for.
   React.useEffect(() => {
-    if (loading) return;
     SplashScreen.hideAsync().catch(() => {});
-  }, [loading]);
+    const t = setTimeout(() => setMinElapsed(true), BRAND_SPLASH_MIN_MS);
+    return () => clearTimeout(t);
+  }, []);
 
-  return <RootNavigator />;
+  return (
+    <View style={{ flex: 1 }}>
+      <RootNavigator />
+      {brandMounted ? (
+        <BrandSplash visible={loading || !minElapsed} onHidden={() => setBrandMounted(false)} />
+      ) : null}
+    </View>
+  );
 }
 
 function RootNavigator() {

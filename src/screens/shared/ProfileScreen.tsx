@@ -25,15 +25,25 @@ export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const role = actor?.role || actor?.type || 'client';
 
+  // Phone-only accounts carry generated placeholders in the email and
+  // username columns (…@phone.local, u07…). They are not the person's — show
+  // nothing rather than an address nobody owns.
+  const isPlaceholderEmail = (e?: string) => /@(phone|walkin)\.local$/i.test(e || '');
+  const isPlaceholderUsername = (u?: string) => /^(u0\d{8,}|walkin_)/i.test(u || '');
+  const baseEmail = isPlaceholderEmail(actor?.email) ? '' : (actor?.email || '');
+
   const [fullName, setFullName] = useState(actor?.full_name || '');
-  const [email, setEmail] = useState(actor?.email || '');
-  const [phone, setPhone] = useState(actor?.phone || '');
+  const [email, setEmail] = useState(baseEmail);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
+  // The phone is the sign-in identity, so it is shown, not edited here.
+  const phoneDisplay = actor?.phone
+    ? String(actor.phone).replace(/^\+256(\d{3})(\d{3})(\d{3})$/, '0$1 $2 $3')
+    : '';
+
   const dirty = fullName.trim() !== (actor?.full_name || '')
-    || email.trim() !== (actor?.email || '')
-    || phone.trim() !== (actor?.phone || '');
+    || email.trim() !== baseEmail;
 
   const handleSave = async () => {
     if (!fullName.trim()) {
@@ -45,7 +55,6 @@ export default function ProfileScreen() {
       await api.updateMe({
         full_name: fullName.trim(),
         email: email.trim() || undefined,
-        phone: phone.trim() || undefined,
       });
       await refreshActor();
       alert('Profile updated', 'Your changes have been saved.');
@@ -118,7 +127,11 @@ export default function ProfileScreen() {
 
           <View style={{ flex: 1 }}>
             <Text style={styles.name} numberOfLines={1}>{displayName}</Text>
-            {actor?.username ? <Text style={styles.handle}>@{actor.username}</Text> : null}
+            {phoneDisplay
+              ? <Text style={styles.handle}>{phoneDisplay}</Text>
+              : actor?.username && !isPlaceholderUsername(actor.username)
+                ? <Text style={styles.handle}>@{actor.username}</Text>
+                : null}
             <View style={styles.roleTag}>
               <Text style={styles.roleTagText}>{(ROLE_LABEL[role] || role).toUpperCase()}</Text>
             </View>
@@ -140,10 +153,12 @@ export default function ProfileScreen() {
             />
             <Field
               label="Phone"
-              value={phone}
-              onChangeText={setPhone}
-              placeholder="+256700000000"
-              keyboardType="phone-pad"
+              value={phoneDisplay}
+              editable={false}
+              placeholder="No phone on file"
+              hint={role === 'client'
+                ? 'This is the number you sign in with.'
+                : 'This is the number you sign in with — ask your manager to change it.'}
               style={{ marginBottom: 0 }}
             />
             <GradientButton
