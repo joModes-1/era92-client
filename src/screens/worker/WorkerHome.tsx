@@ -195,8 +195,10 @@ export default function WorkerHome({ navigation }: any) {
     setTaking(null);
   };
 
+  // Paid through PesaPal already: the money is in, there is nothing to collect.
+  const paidOnline = !!current?.paid_online_at;
   const amountDue = current
-    ? (current.is_redemption ? 0 : Number(current.quoted_amount_ugx) - Number(current.points_value_ugx || 0))
+    ? (current.is_redemption || paidOnline ? 0 : Number(current.quoted_amount_ugx) - Number(current.points_value_ugx || 0))
     : 0;
   const stageIndex = current?.stage === 'ready' ? 1 : 0;
   const stageMinutes = current ? minutesSince(current.stage === 'ready' ? current.wash_done_at : current.started_at) : null;
@@ -212,7 +214,7 @@ export default function WorkerHome({ navigation }: any) {
     ? Math.max(...waiting.map((w: any) => minutesSince(w.requested_at) ?? 0))
     : null;
 
-  const payLine = !current ? '' : amountDue > 0
+  const payLine = !current ? '' : paidOnline ? `Paid online by the client${current.online_payment_ref ? ` · ref ${current.online_payment_ref}` : ''}` : amountDue > 0
     ? (METHOD_LABEL[current.declared_payment_method]
       ? `Client chose ${METHOD_LABEL[current.declared_payment_method]}`
       : "Client hasn't chosen how to pay yet")
@@ -288,7 +290,7 @@ export default function WorkerHome({ navigation }: any) {
 
                 {current.stage === 'ready' ? (
                   <View style={styles.payBox}>
-                    <Text style={styles.payLabel}>{amountDue > 0 ? 'Collect' : 'Nothing to collect'}</Text>
+                    <Text style={styles.payLabel}>{amountDue > 0 ? 'Collect' : paidOnline ? 'Paid online' : 'Nothing to collect'}</Text>
                     {amountDue > 0 ? <Text style={styles.payAmount}>UGX {ugx(amountDue)}</Text> : null}
                     <Text style={styles.payMethod}>{payLine}</Text>
                   </View>

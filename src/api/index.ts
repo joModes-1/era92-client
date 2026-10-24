@@ -574,5 +574,10 @@ export const api = {
   // does NOT charge anything — see PaymentMethodScreen.tsx for why.
   declarePaymentIntent: (washId: string, data: { method: 'cash' | 'mtn' | 'airtel'; phone?: string }) =>
     req('POST', `/me/washes/${washId}/payment-intent`, data),
+  // PesaPal: start paying a wash (returns the hosted checkout link) and ask
+  // where a payment stands.
+  startPayment: (washId: string, phone?: string) =>
+    req('POST', '/me/payments', { wash_id: washId, phone }),
+  getPayment: (paymentId: string) => req('GET', `/me/payments/${paymentId}`),
   cancelBookingRequest: (washId: string) => req('POST', `/me/washes/${washId}/cancel-request`),
 };

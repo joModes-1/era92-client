@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput,
-  Platform, KeyboardAvoidingView, ScrollView,
+  Platform, KeyboardAvoidingView, ScrollView, Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
@@ -18,15 +18,13 @@ import GradientButton from '../../components/GradientButton';
  * with no money moving yet — not a bottom sheet, since nothing here is
  * happening in the middle of some other task.
  *
- * No real payment processor exists anywhere in this codebase — no MTN or
- * Airtel collection API, no webhook. This screen can only ever record a
- * declaration for the worker to confirm at the bay (the worker's own
- * confirm button just reads whatever was declared here — see
- * WorkerHome.tsx's confirmPayment), never charge anyone.
- * SHOW_MOBILE_MONEY stays off until a real collection integration exists.
+ * MTN and Airtel go through PesaPal: the app opens PesaPal's checkout page,
+ * the customer pays there, and this screen waits for the server to confirm
+ * it (the server asks PesaPal itself — nothing here is trusted). Cash is
+ * still only a declaration for the worker to confirm at the bay.
  */
 type PaymentMethod = 'mtn' | 'airtel' | 'cash';
-const SHOW_MOBILE_MONEY = false;
+const SHOW_MOBILE_MONEY = true;
 
 export default function PaymentMethodScreen() {
   const navigation = useNavigation<any>();
@@ -37,15 +35,50 @@ export default function PaymentMethodScreen() {
   const [method, setMethod] = useState<PaymentMethod>(SHOW_MOBILE_MONEY ? 'mtn' : 'cash');
   const [phone, setPhone] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  // Set once PesaPal's page has been opened: the payment we are waiting on.
+  const [awaiting, setAwaiting] = useState<{ id: string; url: string } | null>(null);
+  const done = useRef(false);
 
   const ugx = (n: any) => Number(n || 0).toLocaleString();
   const needsPhone = method === 'mtn' || method === 'airtel';
   const canSubmit = !needsPhone || phone.replace(/\D/g, '').length >= 9;
 
+  const finish = (paid: boolean) => {
+    if (done.current) return;
+    done.current = true;
+    navigation.replace('PaymentSuccess', { wash, method, paid });
+  };
+
+  const checkPayment = async (id: string, quiet = false) => {
+    try {
+      const p: any = await api.getPayment(id);
+      if (p?.status === 'succeeded') finish(true);
+      else if (p?.status === 'failed' && !quiet) {
+        setAwaiting(null);
+        alert('Payment did not go through', 'You have not been charged for this attempt. You can try again.');
+      }
+    } catch { /* keep waiting; the next check will retry */ }
+  };
+
+  // While the PesaPal page is open elsewhere, ask the server every few seconds.
+  useEffect(() => {
+    if (!awaiting) return;
+    const t = setInterval(() => checkPayment(awaiting.id, true), 3000);
+    return () => clearInterval(t);
+  }, [awaiting]);
+
   const submit = async () => {
     if (!canSubmit) return;
     setSubmitting(true);
     try {
+      if (needsPhone) {
+        await api.declarePaymentIntent(wash.id, { method, phone: `+256${phone.replace(/D/g, '')}` });
+        const p: any = await api.startPayment(wash.id, `0${phone.replace(/D/g, '').slice(-9)}`);
+        setAwaiting({ id: p.payment_id, url: p.redirect_url });
+        Linking.openURL(p.redirect_url).catch(() => alert('Could not open the payment page', 'Tap "Open payment page" to try again.'));
+        setSubmitting(false);
+        return;
+      }
       const res: any = await api.declarePaymentIntent(wash.id, {
         method,
         phone: needsPhone ? `+256${phone.replace(/\D/g, '')}` : undefined,
@@ -80,8 +113,9 @@ export default function PaymentMethodScreen() {
           <View style={styles.honestyNote}>
             <Icon name="info-circle" size={12} color={colors.info} />
             <Text style={styles.honestyText}>
-              This does not charge you automatically — a worker will collect payment
-              at the bay and confirm it against what you select here.
+              {needsPhone
+                ? "You'll pay securely on PesaPal. Nothing is charged until you approve it on your phone."
+                : 'This does not charge you automatically — a worker will collect payment at the bay and confirm it against what you select here.'}
             </Text>
           </View>
 
@@ -136,12 +170,19 @@ export default function PaymentMethodScreen() {
             <Text style={styles.methodNoteText}>
               {method === 'cash'
                 ? 'Have this ready when you collect your car — the attendant will confirm it there.'
-                : "You'll still complete this payment with the attendant in person — selecting this just tells them how you plan to pay."}
+                : "We'll open PesaPal so you can pay with mobile money or card. This page confirms it the moment it arrives."}
             </Text>
           </View>
 
+          {awaiting ? (
+            <View style={{ marginTop: spacing.xl, gap: spacing.md }}>
+              <Text style={styles.methodNoteText}>Waiting for your payment… finish it on the PesaPal page, then come back here.</Text>
+              <GradientButton title="I've paid — check now" onPress={() => checkPayment(awaiting.id)} size="lg" full />
+              <GradientButton title="Open payment page" variant="secondary" onPress={() => Linking.openURL(awaiting.url)} size="lg" full />
+            </View>
+          ) : (
           <GradientButton
-            title="Confirm payment method"
+            title={needsPhone ? 'Pay with PesaPal' : 'Confirm payment method'}
             onPress={submit}
             disabled={!canSubmit}
             loading={submitting}
@@ -149,6 +190,7 @@ export default function PaymentMethodScreen() {
             full
             style={{ marginTop: spacing.xl }}
           />
+          )}
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
