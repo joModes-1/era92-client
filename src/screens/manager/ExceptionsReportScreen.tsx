@@ -206,7 +206,7 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
   },
-  chipActive: { backgroundColor: colors.ink[900], borderColor: colors.ink[900] },
+  chipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
   chipText: { fontSize: font.sm, fontWeight: weight.bold, color: colors.textSecondary, letterSpacing: 0.1 },
   chipTextActive: { color: '#fff' },
   chipCount: {
@@ -218,5 +218,5 @@ const styles = StyleSheet.create({
   chipCountTextActive: { color: '#fff' },
 
   explainRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 7, marginTop: -spacing.sm, paddingHorizontal: spacing.xs },
-  explainText: { flex: 1, fontSize: font.xs, color: colors.textMuted, lineHeight: 16 },
+  explainText: { flex: 1, fontSize: font.sm, color: colors.textMuted, lineHeight: 18 },
 });

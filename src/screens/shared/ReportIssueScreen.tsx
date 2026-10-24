@@ -3,14 +3,14 @@ import { View, Text, StyleSheet, ScrollView, RefreshControl, TouchableOpacity, P
 import Constants from 'expo-constants';
 import { api } from '../../api';
 import { useAuth } from '../../api/AuthContext';
-import { colors, radii, font, spacing, weight, tracking, Tone } from '../../theme';
+import { colors, radii, font, spacing, weight, tracking, Tone, orgBg } from '../../theme';
 import Icon from '../../components/Icon';
 import Badge from '../../components/Badge';
-import ScreenHeader, { HeaderAction } from '../../components/ScreenHeader';
+import ScreenHeader from '../../components/ScreenHeader';
 import GradientButton from '../../components/GradientButton';
 import { useAppAlert } from '../../components/AppAlert';
 import {
-  Surface, SectionHeader, EmptyState, SkeletonList, Field, FormSheet, PillPicker,
+  Surface, SectionHeader, EmptyState, SkeletonList, Field, FormSheet, PillPicker, Hint,
 } from '../../components/ui';
 
 /**
@@ -228,7 +228,7 @@ export default function ReportIssueScreen() {
 
   if (!loaded) {
     return (
-      <View style={styles.container}>
+      <View style={[styles.container, orgBg()]}>
         <ScreenHeader title="Report a problem" />
         <ScrollView contentContainerStyle={styles.body}><SkeletonList rows={4} /></ScrollView>
       </View>
@@ -238,7 +238,7 @@ export default function ReportIssueScreen() {
   const openCount = items.filter((i) => i.status === 'open' || i.status === 'in_progress').length;
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, orgBg()]}>
       <ScreenHeader
         title="Report a problem"
         subtitle={
@@ -248,7 +248,6 @@ export default function ReportIssueScreen() {
             ? 'Reports from your organisation'
             : 'Your reports'
         }
-        action={<HeaderAction icon="plus" onPress={openCompose} />}
       />
 
       <ScrollView
@@ -281,7 +280,6 @@ export default function ReportIssueScreen() {
             <SectionHeader
               title={openCount > 0 ? 'Needs attention' : 'Reports'}
               count={items.length}
-              icon="clipboard-list"
             />
             <View style={{ gap: spacing.sm }}>
               {items.map((item) => {
@@ -354,14 +352,11 @@ export default function ReportIssueScreen() {
         )}
 
         {canTriage && items.length > 0 && (
-          <View style={styles.hint}>
-            <Icon name="info-circle" size={11} color={colors.textMuted} />
-            <Text style={styles.hintText}>
-              {isOrgAdmin
-                ? 'Tap a report to work on it. Fix what you can and record how — whoever reported it sees the outcome on their own Reports screen. Anything that needs the software changed, send to the platform team.'
-                : 'Tap a report to mark it as being looked at, or record how it was fixed. Whoever reported it sees the outcome in the app.'}
-            </Text>
-          </View>
+          <Hint>
+            {isOrgAdmin
+              ? 'Tap a report to work on it. Fix what you can and record how — whoever reported it sees the outcome on their own Reports screen. Anything that needs the software changed, send to the platform team.'
+              : 'Tap a report to mark it as being looked at, or record how it was fixed. Whoever reported it sees the outcome in the app.'}
+          </Hint>
         )}
       </ScrollView>
 
@@ -472,7 +467,7 @@ export default function ReportIssueScreen() {
                 size={13}
                 color={escalate ? colors.accent : colors.textMuted}
               />
-              <Text style={[styles.escalateText, escalate && { color: colors.accent }]}>
+              <Text style={[styles.escalateText, escalate && { color: colors.accentText }]}>
                 I cannot fix this — send it to the platform team
               </Text>
             </TouchableOpacity>
@@ -507,18 +502,18 @@ export default function ReportIssueScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   scroll: { flex: 1 },
-  body: { padding: spacing.lg, paddingBottom: spacing.xxxl, gap: spacing.lg },
+  body: { padding: spacing.lg, paddingBottom: spacing.xxxl, gap: spacing.xl },
 
   card: { gap: spacing.sm },
   cardDone: { opacity: 0.72 },
   cardHead: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
   subject: { fontSize: font.regular, fontWeight: weight.heavy, color: colors.text, letterSpacing: tracking.tight },
-  meta: { fontSize: font.micro, color: colors.textMuted, marginTop: 2 },
-  bodyText: { fontSize: font.xs, color: colors.textSecondary, lineHeight: 18 },
+  meta: { fontSize: font.xs, color: colors.textMuted, marginTop: 2 },
+  bodyText: { fontSize: font.sm, color: colors.textSecondary, lineHeight: 19 },
 
   tags: { flexDirection: 'row', alignItems: 'center', gap: 7, flexWrap: 'wrap' },
-  ref: { fontSize: font.micro, fontWeight: weight.heavy, color: colors.textMuted, letterSpacing: tracking.caps },
-  who: { flex: 1, fontSize: font.micro, color: colors.textMuted, textAlign: 'right' },
+  ref: { fontSize: font.xs, fontWeight: weight.heavy, color: colors.textMuted, letterSpacing: tracking.caps },
+  who: { flex: 1, fontSize: font.xs, color: colors.textMuted, textAlign: 'right' },
 
   badgeStack: { alignItems: 'flex-end', gap: 4 },
 
@@ -527,7 +522,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accentSoft, borderRadius: radii.sm,
     paddingVertical: 8, paddingHorizontal: spacing.md,
   },
-  escalationText: { flex: 1, fontSize: font.xs, color: colors.accent, fontWeight: weight.semibold, lineHeight: 16 },
+  escalationText: { flex: 1, fontSize: font.sm, color: colors.accentText, fontWeight: weight.semibold, lineHeight: 18 },
 
   escalateToggle: {
     flexDirection: 'row', alignItems: 'center', gap: 9,
@@ -538,20 +533,17 @@ const styles = StyleSheet.create({
   escalateText: { flex: 1, fontSize: font.sm, fontWeight: weight.bold, color: colors.textSecondary },
 
   alreadyEscalated: { flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: spacing.xs },
-  alreadyEscalatedText: { fontSize: font.xs, color: colors.accent, fontWeight: weight.semibold },
+  alreadyEscalatedText: { fontSize: font.sm, color: colors.accentText, fontWeight: weight.semibold },
 
   resolutionBox: {
     flexDirection: 'row', alignItems: 'flex-start', gap: 7,
     backgroundColor: colors.successSoft, borderRadius: radii.sm,
     paddingVertical: 8, paddingHorizontal: spacing.md,
   },
-  resolutionText: { flex: 1, fontSize: font.xs, color: colors.success, fontWeight: weight.semibold, lineHeight: 16 },
+  resolutionText: { flex: 1, fontSize: font.sm, color: colors.successText, fontWeight: weight.semibold, lineHeight: 18 },
 
   triageQuote: { gap: 4, marginBottom: spacing.lg },
-  triageSubject: { fontSize: font.sm, fontWeight: weight.heavy, color: colors.text },
-  triageBody: { fontSize: font.xs, color: colors.textSecondary, lineHeight: 17 },
-  triageFrom: { fontSize: font.micro, color: colors.textMuted, marginTop: 2 },
-
-  hint: { flexDirection: 'row', alignItems: 'flex-start', gap: 7, paddingHorizontal: spacing.xs },
-  hintText: { flex: 1, fontSize: font.xs, color: colors.textMuted, lineHeight: 17 },
+  triageSubject: { fontSize: font.regular, fontWeight: weight.heavy, color: colors.text },
+  triageBody: { fontSize: font.sm, color: colors.textSecondary, lineHeight: 18 },
+  triageFrom: { fontSize: font.xs, color: colors.textMuted, marginTop: 2 },
 });

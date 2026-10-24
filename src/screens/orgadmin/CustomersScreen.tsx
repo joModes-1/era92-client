@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, RefreshControl, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { api } from '../../api';
-import { colors, radii, font, spacing, weight, tracking } from '../../theme';
+import { colors, radii, font, spacing, weight, tracking, orgBg } from '../../theme';
 import Icon from '../../components/Icon';
 import ScreenHeader, { HeaderStat } from '../../components/ScreenHeader';
 import { useAppAlert } from '../../components/AppAlert';
@@ -99,7 +99,7 @@ export default function CustomersScreen() {
 
   if (!loaded) {
     return (
-      <View style={styles.container}>
+      <View style={[styles.container, orgBg()]}>
         <ScreenHeader title="Customers" />
         <ScrollView contentContainerStyle={styles.body}><SkeletonList rows={6} showHeader={false} /></ScrollView>
       </View>
@@ -111,7 +111,7 @@ export default function CustomersScreen() {
   const withPoints = clients.filter((c: any) => Number(c.points_balance || 0) > 0).length;
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, orgBg()]}>
       <ScreenHeader
         title="Customers"
         subtitle={
@@ -219,12 +219,12 @@ export default function CustomersScreen() {
           <Surface elevation="none" tone={colors.bgSunken} borderless style={styles.current}>
             <View style={styles.currentItem}>
               <Text style={styles.currentValue}>{Number(adjustTarget.settled_washes || 0)}</Text>
-              <Text style={styles.currentLabel}>WASHES</Text>
+              <Text style={styles.currentLabel}>Washes</Text>
             </View>
             <View style={styles.currentDivider} />
             <View style={styles.currentItem}>
               <Text style={styles.currentValue}>{Number(adjustTarget.points_balance || 0).toLocaleString()}</Text>
-              <Text style={styles.currentLabel}>POINTS</Text>
+              <Text style={styles.currentLabel}>Points</Text>
             </View>
           </Surface>
         ) : null}
@@ -262,7 +262,7 @@ const styles = StyleSheet.create({
     minHeight: 44, borderRadius: radii.md,
     backgroundColor: colors.primarySoft,
   },
-  moreText: { fontSize: font.sm, fontWeight: weight.heavy, color: colors.primary },
+  moreText: { fontSize: font.sm, fontWeight: weight.heavy, color: colors.primaryText },
   endText: { fontSize: font.xs, color: colors.textMuted, textAlign: 'center', paddingVertical: spacing.sm },
 
   right: { alignItems: 'flex-end', gap: 4 },
@@ -273,11 +273,11 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accentSoft, borderRadius: radii.full,
     paddingHorizontal: 7, paddingVertical: 2,
   },
-  creditText: { fontSize: font.micro, fontWeight: weight.heavy, color: colors.accent },
+  creditText: { fontSize: font.xs, fontWeight: weight.heavy, color: colors.accentText },
 
   current: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.lg },
   currentItem: { flex: 1, alignItems: 'center', gap: 2 },
   currentDivider: { width: StyleSheet.hairlineWidth, alignSelf: 'stretch', backgroundColor: colors.border },
   currentValue: { fontSize: font.xxl, fontWeight: weight.black, color: colors.text, letterSpacing: tracking.display },
-  currentLabel: { fontSize: font.micro, fontWeight: weight.bold, color: colors.textMuted, letterSpacing: tracking.caps },
+  currentLabel: { fontSize: font.xs, fontWeight: weight.semibold, color: colors.textMuted },
 });

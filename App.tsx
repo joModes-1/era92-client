@@ -61,7 +61,6 @@ import AuditLogScreen from './src/screens/orgadmin/AuditLogScreen';
 import ClientHome from './src/screens/client/ClientHome';
 import HistoryScreen from './src/screens/client/HistoryScreen';
 import LoyaltyScreen from './src/screens/client/LoyaltyScreen';
-import LedgerScreen from './src/screens/client/LedgerScreen';
 import BranchScanScreen from './src/screens/client/BranchScanScreen';
 import BookWashScreen from './src/screens/client/BookWashScreen';
 import PaymentMethodScreen from './src/screens/client/PaymentMethodScreen';
@@ -156,10 +155,13 @@ function SysadminDrawer() {
 function ClientDrawer() {
   return (
     <Drawer.Navigator screenOptions={drawerScreenOptions} drawerContent={(p) => <AppDrawerContent {...p} />}>
-      <Drawer.Screen name="Active Wash" component={ClientHome} />
-      <Drawer.Screen name="History" component={HistoryScreen} />
-      <Drawer.Screen name="Loyalty" component={LoyaltyScreen} />
-      <Drawer.Screen name="Points History" component={LedgerScreen} />
+      {/* Every role's first page is its Home — the page the header's back
+          arrow and Android's back button return to. */}
+      <Drawer.Screen name="Home" component={ClientHome} />
+      <Drawer.Screen name="History" component={HistoryScreen} options={{ drawerLabel: 'My washes' }} />
+      {/* Balance, redeem, and the history behind the balance on one page —
+          it used to be two (Loyalty and Points History). */}
+      <Drawer.Screen name="Points" component={LoyaltyScreen} />
       <Drawer.Screen name="Report a problem" component={ReportIssueScreen} />
       <Drawer.Screen name="Profile" component={ProfileScreen} />
     </Drawer.Navigator>

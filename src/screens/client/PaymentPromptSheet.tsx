@@ -1,13 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import {
-  Modal, View, Text, Image, StyleSheet, TouchableOpacity, Pressable, TextInput,
-  KeyboardAvoidingView, Platform,
-} from 'react-native';
+import { View, Text, Image, StyleSheet, TouchableOpacity, TextInput } from 'react-native';
 import { api } from '../../api';
 import { colors, radii, font, spacing, weight, noFocusRing } from '../../theme';
 import ComponentButton1 from '../../components/buttons/ComponentButton1';
 import Icon from '../../components/Icon';
 import UgandaFlag from '../../components/UgandaFlag';
+import { Sheet } from '../../components/ui';
 
 type Method = 'mtn' | 'airtel' | 'cash';
 
@@ -56,70 +54,65 @@ export default function PaymentPromptSheet({
   };
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable style={s.backdrop} onPress={onClose} />
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <View style={s.sheet}>
-          <TouchableOpacity onPress={onClose} hitSlop={12} style={s.close} activeOpacity={0.6}>
-            <Text style={s.closeText}>Close</Text>
-          </TouchableOpacity>
+    <Sheet visible={visible} onClose={onClose}>
+      <TouchableOpacity onPress={onClose} hitSlop={12} style={s.close} activeOpacity={0.6}>
+        <Text style={s.closeText}>Close</Text>
+      </TouchableOpacity>
 
-          {step === 'prompt' ? (
-            <View style={s.center}>
-              <Image source={require('../../../assets/shield.png')} style={s.shield} resizeMode="contain" />
-              <Text style={s.amountTitle}>Pay UGX {amount}</Text>
-              <Text style={s.sub}>Select payment method to proceed{'\n'}with payment of your service</Text>
-              <ComponentButton1 title="Make a payment" onPress={() => setStep('method')} />
-            </View>
-          ) : (
-            <View>
-              <Text style={s.methodTitle}>Choose Payment Method</Text>
-
-              <View style={s.row}>
-                <MethodOption selected={method === 'mtn'} onPress={() => setMethod('mtn')} label="MTN" logo={<MtnLogo />} />
-                <MethodOption selected={method === 'airtel'} onPress={() => setMethod('airtel')} label="Airtel" logo={<AirtelLogo />} />
-              </View>
-              <MethodOption
-                selected={method === 'cash'}
-                onPress={() => setMethod('cash')}
-                label="Cash"
-                logo={<Icon name="money-bill-alt" size={14} color={colors.text} />}
-                wide
-              />
-
-              {needsPhone ? (
-                <View style={s.phoneField}>
-                  <UgandaFlag width={18} height={12} />
-                  <Text style={s.dial}>+256</Text>
-                  <TextInput
-                    value={phone}
-                    onChangeText={(t) => setPhone(t.replace(/[^\d]/g, '').slice(0, 10))}
-                    placeholder="782235801"
-                    placeholderTextColor={colors.textMuted}
-                    keyboardType="phone-pad"
-                    inputMode="numeric"
-                    style={s.phoneInput}
-                  />
-                  <Icon name="address-book" size={15} color={colors.primary} />
-                </View>
-              ) : null}
-
-              {error ? <Text style={s.error}>{error}</Text> : null}
-
-              <ComponentButton1
-                title={`Pay UGX ${amount}`}
-                onPress={pay}
-                loading={submitting}
-                disabled={!canPay}
-                
-                full
-                style={{ marginTop: spacing.lg }}
-              />
-            </View>
-          )}
+      {step === 'prompt' ? (
+        <View style={s.center}>
+          <Image source={require('../../../assets/shield.png')} style={s.shield} resizeMode="contain" />
+          <Text style={s.amountTitle}>Pay UGX {amount}</Text>
+          <Text style={s.sub}>Select payment method to proceed{'\n'}with payment of your service</Text>
+          <ComponentButton1 title="Make a payment" onPress={() => setStep('method')} />
         </View>
-      </KeyboardAvoidingView>
-    </Modal>
+      ) : (
+        <View>
+          <Text style={s.methodTitle}>Choose Payment Method</Text>
+
+          <View style={s.row}>
+            <MethodOption selected={method === 'mtn'} onPress={() => setMethod('mtn')} label="MTN" logo={<MtnLogo />} />
+            <MethodOption selected={method === 'airtel'} onPress={() => setMethod('airtel')} label="Airtel" logo={<AirtelLogo />} />
+          </View>
+          <MethodOption
+            selected={method === 'cash'}
+            onPress={() => setMethod('cash')}
+            label="Cash"
+            logo={<Icon name="money-bill-alt" size={14} color={colors.text} />}
+            wide
+          />
+
+          {needsPhone ? (
+            <View style={s.phoneField}>
+              <UgandaFlag width={18} height={12} />
+              <Text style={s.dial}>+256</Text>
+              <TextInput
+                value={phone}
+                onChangeText={(t) => setPhone(t.replace(/[^\d]/g, '').slice(0, 10))}
+                placeholder="782235801"
+                placeholderTextColor={colors.textMuted}
+                keyboardType="phone-pad"
+                inputMode="numeric"
+                style={s.phoneInput}
+              />
+              <Icon name="address-book" size={15} color={colors.primary} />
+            </View>
+          ) : null}
+
+          {error ? <Text style={s.error}>{error}</Text> : null}
+
+          <ComponentButton1
+            title={`Pay UGX ${amount}`}
+            onPress={pay}
+            loading={submitting}
+            disabled={!canPay}
+            
+            full
+            style={{ marginTop: spacing.lg }}
+          />
+        </View>
+      )}
+    </Sheet>
   );
 }
 
@@ -158,15 +151,6 @@ function AirtelLogo() {
 }
 
 const s = StyleSheet.create({
-  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)' },
-  sheet: {
-    backgroundColor: colors.bgCard,
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.lg,
-    paddingBottom: spacing.xl,
-  },
   close: { alignSelf: 'flex-end' },
   closeText: { fontSize: font.sm, fontWeight: weight.semibold, color: colors.text },
   center: { alignItems: 'center' },

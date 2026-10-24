@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput, Platform,
-  KeyboardAvoidingView, ScrollView,
+  KeyboardAvoidingView, ScrollView, Image, ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -11,6 +11,7 @@ import { colors, radii, font, spacing, weight, tracking, noFocusRing } from '../
 import ComponentButton1 from '../components/buttons/ComponentButton1';
 import Icon from '../components/Icon';
 import UgandaFlag from '../components/UgandaFlag';
+import { Sheet } from '../components/ui';
 
 /**
  * Customer sign-in: a phone number and a code, nothing else.
@@ -23,9 +24,11 @@ import UgandaFlag from '../components/UgandaFlag';
  * Signing up and signing in are the same two screens — whether the number
  * is already known is the server's problem, not something to make the
  * customer declare up front. A new number is never asked for a name either:
- * the server resolves one itself (a name-lookup-by-phone provider, once one
- * is configured — see server/src/utils/nameLookup.ts) and falls back to
- * "Customer" until they rename themselves in Profile.
+ * the server looks it up from the SIM's mobile-money registration
+ * (server/src/modules/nameLookup — a placeholder name until the MTN /
+ * Airtel keys are configured). A brand-new account then gets one extra
+ * step: the "Accounts" sheet shows the name it was given, and the customer
+ * taps it to go in, or "Add account" to use a different number.
  */
 
 const CODE_LENGTH = 4;
@@ -35,7 +38,7 @@ type Step = 'phone' | 'code';
 
 export default function RegisterScreen() {
   const navigation = useNavigation<any>();
-  const { refreshActor } = useAuth();
+  const { refreshActor, logout } = useAuth();
 
   const [step, setStep] = useState<Step>('phone');
   const [phone, setPhone] = useState('');
@@ -46,6 +49,10 @@ export default function RegisterScreen() {
   const [devCode, setDevCode] = useState('');
   const [resendIn, setResendIn] = useState(0);
   const [focused, setFocused] = useState(false);
+  // Set once a brand-new client account exists: the "Accounts" sheet shows
+  // it, and the app is only entered when they pick it.
+  const [newAccount, setNewAccount] = useState<{ name: string; phone: string } | null>(null);
+  const [entering, setEntering] = useState(false);
 
   const codeInput = useRef<TextInput>(null);
 
@@ -121,6 +128,16 @@ export default function RegisterScreen() {
         });
       } else {
         await setActor({ ...me, type: 'client', role: 'client', must_change_password: false });
+        // A number the server has just made an account for: show the name
+        // it was given before going in. A returning client goes straight in.
+        if (data.is_new) {
+          setNewAccount({
+            name: me.full_name || data.full_name || 'Customer',
+            phone: me.phone || data.phone || '',
+          });
+          setLoading(false);
+          return;
+        }
       }
       await refreshActor();
     } catch (e: any) {
@@ -128,6 +145,33 @@ export default function RegisterScreen() {
       setCode('');
     }
     setLoading(false);
+  };
+
+  /** "That's me" — into the app as the new account. */
+  const enterAsNewAccount = async () => {
+    setEntering(true);
+    try {
+      // Publishing the actor is what swaps the sign-in stack for the app.
+      await refreshActor();
+    } catch (e: any) {
+      setEntering(false);
+      setNewAccount(null);
+      setError(e.message || 'Could not open your account. Try again.');
+    }
+  };
+
+  /**
+   * "Add account" — use a different number instead. The account just made
+   * is kept (it is that number's, and signing in with it later finds it);
+   * this session is signed out and the flow starts again at the number.
+   */
+  const addAnotherAccount = async () => {
+    setNewAccount(null);
+    await logout().catch(() => {});
+    setStep('phone');
+    setPhone('');
+    setCode('');
+    setError('');
   };
 
   const Header = ({ title, onBack }: { title: string; onBack: () => void }) => (
@@ -206,6 +250,14 @@ export default function RegisterScreen() {
               </Text>
             </TouchableOpacity>
 
+            {/* A wrong or expired code used to clear the boxes and say
+                nothing — the error was set but only the number step drew it. */}
+            {error ? (
+              <View style={styles.errorBox}>
+                <Icon name="exclamation-circle" size={12} color={colors.error} />
+                <Text style={styles.errorText}>{error}</Text>
+              </View>
+            ) : null}
           </ScrollView>
 
           <View style={styles.footer} onStartShouldSetResponder={() => true}>
@@ -214,11 +266,51 @@ export default function RegisterScreen() {
               onPress={verify}
               disabled={!canVerify}
               loading={loading}
-              
+
               full
             />
           </View>
         </KeyboardAvoidingView>
+
+        {/* ── New account: the name it was given, before going in ──
+            Not dismissable by tapping outside: the account exists and
+            signed in, so the only ways on are into it or onto another. */}
+        <Sheet visible={!!newAccount} onClose={addAnotherAccount} dismissable={false}>
+          <Text style={styles.sheetTitle}>Accounts</Text>
+          <Text style={styles.sheetSub}>Choose account</Text>
+
+          <TouchableOpacity
+            style={styles.accountRow}
+            onPress={enterAsNewAccount}
+            disabled={entering}
+            activeOpacity={0.75}
+            accessibilityRole="button"
+            accessibilityLabel={`Continue as ${newAccount?.name}`}
+          >
+            <View style={styles.accountArt}>
+              <Image
+                source={require('../../assets/services/full-car-wash.png')}
+                style={styles.accountArtImage}
+                resizeMode="contain"
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.accountName} numberOfLines={1}>{newAccount?.name}</Text>
+              <Text style={styles.accountPhone} numberOfLines={1}>{newAccount?.phone}</Text>
+            </View>
+            {entering ? <ActivityIndicator size="small" color={colors.primary} /> : null}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.addAccount}
+            onPress={addAnotherAccount}
+            disabled={entering}
+            activeOpacity={0.75}
+            accessibilityRole="button"
+          >
+            <Text style={styles.addAccountText}>Add account</Text>
+          </TouchableOpacity>
+        </Sheet>
       </SafeAreaView>
     );
   }
@@ -439,6 +531,38 @@ const styles = StyleSheet.create({
     marginTop: spacing.lg,
   },
   errorText: { flex: 1, fontSize: font.sm, color: colors.error, fontWeight: weight.semibold },
+
+  // ── Accounts sheet (new account) ──
+  // Centred heading over light, borderless rows — the mockup's account
+  // chooser, with the same field grey as the phone input above.
+  sheetTitle: { fontSize: font.regular, fontWeight: weight.semibold, color: colors.text, textAlign: 'center' },
+  sheetSub: { fontSize: font.xs, color: colors.textMuted, textAlign: 'center', marginTop: 2, marginBottom: spacing.xl },
+  accountRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    backgroundColor: colors.bgField,
+    borderRadius: radii.md,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
+  },
+  accountArt: {
+    width: 36, height: 36, borderRadius: radii.full,
+    backgroundColor: colors.bgCard,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  accountArtImage: { width: 30, height: 24 },
+  accountName: { fontSize: font.regular, fontWeight: weight.semibold, color: colors.text },
+  accountPhone: { fontSize: font.xs, color: colors.textMuted, marginTop: 2 },
+  addAccount: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.bgField,
+    borderRadius: radii.md,
+    height: 44,
+    marginTop: spacing.lg,
+  },
+  addAccountText: { fontSize: font.sm, fontWeight: weight.semibold, color: colors.text },
 
   // Pinned to the bottom, above the keyboard — the mockup's primary action
   // sits there rather than inline with the fields.

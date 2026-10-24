@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { View, Text, StyleSheet, ScrollView, RefreshControl, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, RefreshControl } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../../api/AuthContext';
 import { api } from '../../api';
@@ -10,7 +10,7 @@ import {
 } from './HomeParts';
 import { consumePaymentDone } from './paymentToast';
 import { artFor } from './serviceArt';
-import PointsSheet from './PointsSheet';
+import PointsSheet, { ledgerEntries, pendingPointsFor } from './PointsSheet';
 import NotificationPrompt from '../../components/NotificationPrompt';
 import BranchPickerSheet from '../../components/BranchPickerSheet';
 import PaymentPromptSheet from './PaymentPromptSheet';
@@ -60,33 +60,38 @@ export default function ClientHome({ navigation }: any) {
   const alert = useAppAlert();
   const [points, setPoints] = useState<any>(null);
   const [pointsLedger, setPointsLedger] = useState<any[]>([]);
-  const [active, setActive] = useState<any>(null);
+  // Every car on the go, newest first. A client can have more than one: the
+  // two cars of a 2-for-1 booking, or a second car booked while the first
+  // is still being washed.
+  const [activeList, setActiveList] = useState<any[]>([]);
   const [history, setHistory] = useState<any[]>([]);
   const [loyalty, setLoyalty] = useState<any>(null);
   const [vcs, setVcs] = useState<any[]>([]);
   // The "wash 2 cars for the price of 1" card: null until the first fetch
   // resolves (rendered as available), then whatever the server says — the
-  // server is the only source of truth for whether the offer was grabbed.
+  // server is the only source of truth for whether the offer was taken.
   const [promo, setPromo] = useState<any>(null);
   // The nearby-branch picker behind the top-left branch row — a manual
   // alternative to scanning the wall QR, never an automatic selection.
   const [pickerOpen, setPickerOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
-  const prevStatus = useRef<string | null>(null);
+  // Each live car's last seen status, so "ready" is announced once per car.
+  const prevStatus = useRef<Record<string, string>>({});
   // Wash ids whose payment prompt was closed this session, so it pops up
   // once per booking rather than on every 8s poll.
   const [dismissedPrompts, setDismissedPrompts] = useState<string[]>([]);
   const [showPaidToast, setShowPaidToast] = useState(false);
-  // Tapping the pending row reopens the payment popup even after it was closed.
-  const [forcePrompt, setForcePrompt] = useState(false);
+  // Tapping a pending row reopens the payment popup for that car, even
+  // after it was closed.
+  const [forcePromptId, setForcePromptId] = useState<string | null>(null);
   const [pointsOpen, setPointsOpen] = useState(false);
 
   const load = useCallback(async () => {
     try {
       const [pts, a, h, l, prices, promoRes, ledgerRes] = await Promise.allSettled([
         api.clientPoints(),
-        api.clientActive(),
+        api.clientActiveList(),
         api.clientHistory(),
         api.clientLoyalty(),
         api.clientPrices(),
@@ -95,7 +100,7 @@ export default function ClientHome({ navigation }: any) {
       ]);
       if (pts.status === 'fulfilled') setPoints(pts.value);
       if (ledgerRes.status === 'fulfilled') setPointsLedger(Array.isArray(ledgerRes.value) ? ledgerRes.value : []);
-      if (a.status === 'fulfilled') setActive(a.value);
+      if (a.status === 'fulfilled') setActiveList(Array.isArray(a.value) ? a.value : []);
       if (h.status === 'fulfilled') setHistory(Array.isArray(h.value) ? h.value : []);
       if (l.status === 'fulfilled') setLoyalty(l.value);
       if (prices.status === 'fulfilled' && prices.value) {
@@ -114,60 +119,67 @@ export default function ClientHome({ navigation }: any) {
     if (consumePaymentDone()) setShowPaidToast(true);
   }, [load]));
 
-  // While a wash is active, the status changes on the WORKER's phone, not
+  // While a car is on the go, its status changes on the WORKER's phone, not
   // this one — poll so "booked" flips to "in progress" to "ready" without
   // a manual pull. Stops once nothing is active, so an idle app is not
   // hitting the API on a timer for no reason.
+  const hasActive = activeList.length > 0;
   useEffect(() => {
-    if (!active) return;
+    if (!hasActive) return;
     const timer = setInterval(load, 8000);
     return () => clearInterval(timer);
-  }, [active, load]);
+  }, [hasActive, load]);
 
-  // Announce the moment the car becomes ready.
+  // Announce the moment a car becomes ready — once, even if both cars of a
+  // pair finish in the same poll.
+  const statusKey = activeList.map((w: any) => `${w.id}:${w.status}`).join(',');
   useEffect(() => {
-    const status = active?.status || null;
-    if (prevStatus.current === 'in_progress' && status === 'ready') {
-      if (active?.is_redemption) {
-        alert('Your car is ready', 'This wash was free — nothing to pay. Just collect your car.');
-      } else {
-        alert('Your car is ready', 'Head to the bay to collect it.');
-      }
+    const nowReady = activeList.filter((w: any) => prevStatus.current[w.id] === 'in_progress' && w.status === 'ready');
+    if (nowReady.length > 0) {
+      const allFree = nowReady.every((w: any) => w.is_redemption);
+      alert(
+        nowReady.length > 1 ? 'Your cars are ready' : 'Your car is ready',
+        allFree
+          ? `${nowReady.length > 1 ? 'These washes were' : 'This wash was'} free — nothing to pay. Just collect your car.`
+          : 'Head to the bay to collect it.'
+      );
     }
-    prevStatus.current = status;
-  }, [active?.status, active?.is_redemption, alert]);
+    prevStatus.current = Object.fromEntries(activeList.map((w: any) => [w.id, w.status]));
+  }, [statusKey, alert]);
 
-  // The real points history: earned on settled washes, spent at booking,
-  // refunded on a cancel, taken back on a reversal.
-  const ENTRY_LABEL: Record<string, string> = {
-    earn: 'Earned', redeem: 'Used', refund: 'Refunded', reversal: 'Taken back', adjust: 'Adjusted',
-  };
-  const pointsEntries = React.useMemo(() => pointsLedger.map((r: any, i: number) => ({
-    id: `${r.created_at}-${i}`,
-    title: r.service_name || (r.entry_type === 'adjust' ? 'Points adjustment' : 'Wash'),
-    subtitle: `${ENTRY_LABEL[r.entry_type] || r.entry_type} • ${dateLabel(r.created_at)}`,
-    points: Number(r.points_delta),
-  })), [pointsLedger]);
+  // The real points history (earned on paid washes, spent at booking,
+  // refunded on a cancel, taken back on a reversal) and the points still on
+  // their way — built by the same helpers as the Points page, so both show
+  // one number.
+  const pointsEntries = React.useMemo(() => ledgerEntries(pointsLedger), [pointsLedger]);
+  const pendingPoints = React.useMemo(() => pendingPointsFor(activeList, points?.enabled), [activeList, points?.enabled]);
   const pointsBalance = Number(points?.balance || 0);
 
   // What the client still owes after points; a free wash owes nothing.
   const amountDue = (w: any) => Number(w?.amount_due_ugx ?? w?.quoted_amount_ugx ?? 0);
-  const showPaymentPrompt = !!active
-    && !active.is_redemption
-    && !active.declared_payment_method
-    && amountDue(active) > 0
-    && !dismissedPrompts.includes(active.id);
+  const owesPayment = (w: any) => !!w && !w.is_redemption && amountDue(w) > 0;
+
+  // The car the payment popup is for: one the client tapped, else the newest
+  // car that still owes money and has no payment method chosen. Never the
+  // free car of a 2-for-1 pair — it has nothing to pay.
+  const promptWash = forcePromptId
+    ? activeList.find((w: any) => w.id === forcePromptId) || null
+    : activeList.find((w: any) => owesPayment(w) && !w.declared_payment_method && !dismissedPrompts.includes(w.id)) || null;
   const dismissPrompt = () => {
-    setForcePrompt(false);
-    if (active) setDismissedPrompts((ids) => [...ids, active.id]);
+    setForcePromptId(null);
+    if (promptWash) setDismissedPrompts((ids) => [...ids, promptWash.id]);
   };
 
+  // Not on screen right now (see the trackers below) — kept ready for when
+  // "Cancel booking" gets its place in the design. Only a booking nobody
+  // has taken yet can be cancelled; any points spent on it come back, and
+  // cancelling one car of a 2-for-1 pair hands the offer back (the other
+  // car then carries on at its own price).
   const [cancelling, setCancelling] = useState(false);
-  const cancelBooking = async () => {
-    if (!active) return;
+  const cancelBooking = async (washId: string) => {
     setCancelling(true);
     try {
-      const res: any = await api.cancelBookingRequest(active.id);
+      const res: any = await api.cancelBookingRequest(washId);
       await load();
       alert(
         'Booking cancelled',
@@ -193,13 +205,21 @@ export default function ClientHome({ navigation }: any) {
 
   const firstName = actor?.full_name?.split(' ')[0] || 'Customer';
 
-  /** The four service tiles at the top — same derivation as the worker screen. */
-  const TILE_ORDER = ['engine', 'interior', 'heavy', 'bike'];
+  /**
+   * The four service tiles at the top, in the mockup's order: Full car
+   * wash, Interior detailing, Heavy vehicle, Bikes. A branch with no Full
+   * car wash gets Engine wash in that first place (it shares the car-pair
+   * render); with both, Engine wash ranks after the four so it never pushes
+   * Bikes off the grid.
+   */
+  const TILE_ORDER = ['full', 'interior', 'heavy', 'bike'];
   const serviceTiles = React.useMemo(() => {
     const firstClass = vcs[0];
     const list = (firstClass?.services || []).filter((s: any) => s.has_price);
+    const hasFull = list.some((s: any) => /full/i.test(s.name || ''));
     const rank = (name: string) => {
       const n = (name || '').toLowerCase();
+      if (n.includes('engine') && !hasFull) return 0;
       const i = TILE_ORDER.findIndex((k) => n.includes(k));
       return i === -1 ? TILE_ORDER.length : i;
     };
@@ -207,19 +227,16 @@ export default function ClientHome({ navigation }: any) {
   }, [vcs]);
 
   /** Recent washes for the list at the bottom. */
-  // The current booking leads the list as "Pending"; everything else is
-  // history (settled or cancelled).
+  // Every car on the go leads the list, each at its own stage; everything
+  // else is history (settled or cancelled).
   const recentWashes = React.useMemo(() => {
-    const done = history.filter((w: any) => !active || w.id !== active.id);
-    return (active ? [active, ...done] : done).slice(0, 4);
-  }, [history, active]);
+    const activeIds = new Set(activeList.map((w: any) => w.id));
+    const done = history.filter((w: any) => !activeIds.has(w.id));
+    return [...activeList, ...done].slice(0, Math.max(4, activeList.length));
+  }, [history, activeList]);
 
-  /** The promo card's state, from the server's own record of the offer. */
-  const promoState: 'available' | 'armed' | 'used' = promo?.used
-    ? 'used'
-    : promo && !promo.available && !promo.active_wash
-      ? 'armed'
-      : 'available';
+  /** The promo card's state: taken the moment the two cars are booked. */
+  const promoState: 'available' | 'used' = promo?.used ? 'used' : 'available';
 
   if (initialLoading) {
     return (
@@ -227,7 +244,7 @@ export default function ClientHome({ navigation }: any) {
         <HomeTopBar
           branch={actor?.branch_name || `Good day, ${firstName}`}
           points={0}
-          onPoints={() => navigation.navigate('Loyalty')}
+          onPoints={() => navigation.navigate('Points')}
           onMenu={() => navigation.openDrawer?.()}
           onBranch={() => setPickerOpen(true)}
         />
@@ -243,7 +260,7 @@ export default function ClientHome({ navigation }: any) {
       <HomeTopBar
         branch={actor?.branch_name || `Good day, ${firstName}`}
         points={Number(points?.balance || 0)}
-        onPoints={() => navigation.navigate('Loyalty')}
+        onPoints={() => navigation.navigate('Points')}
         onMenu={() => navigation.openDrawer?.()}
         onBranch={() => setPickerOpen(true)}
       />
@@ -263,17 +280,27 @@ export default function ClientHome({ navigation }: any) {
         <RewardsBanner
           headline={`Get up to ${compactUgx(Number(points?.worth_ugx || 0) || 200000)} in rewards`}
           amount={compactUgx(Number(points?.worth_ugx || 0) || 200000)}
-          onPress={() => navigation.navigate('Loyalty')}
+          onPress={() => navigation.navigate('Points')}
         />
 
-        {active ? <WashTracker status={active.status} /> : null}
-        {/* A booking nobody has taken yet can still be cancelled; any points
-            spent on it come back. Once a worker has the car it is too late. */}
-        {active?.status === 'requested' ? (
-          <TouchableOpacity onPress={cancelBooking} style={styles.cancelLink} activeOpacity={0.7} disabled={cancelling}>
-            <Text style={styles.cancelText}>{cancelling ? 'Cancelling…' : 'Cancel booking'}</Text>
-          </TouchableOpacity>
-        ) : null}
+        {/* One track per car. With more than one on the go, each is named
+            so the client can tell which car is where. */}
+        {activeList.map((w: any) => (
+          <View key={w.id}>
+            {activeList.length > 1 ? (
+              <View style={styles.trackerHead}>
+                <Text style={styles.trackerTitle} numberOfLines={1}>
+                  {w.service_name} · {w.vehicle_class_name}{w.plate ? ` · ${w.plate}` : ''}
+                </Text>
+                {w.is_redemption ? <Text style={styles.trackerFree}>Free</Text> : null}
+              </View>
+            ) : null}
+            <WashTracker status={w.status} />
+          </View>
+        ))}
+        {/* "Cancel booking" was shown here under the tracker; taken off the
+            home screen until its place in the design is decided. The logic
+            (cancelBooking above) is kept, so it only needs a button. */}
 
         {/* Tapping a tile jumps straight into the same branch-scan step the
             orange bar below starts — a client still has no branch_id on
@@ -321,11 +348,11 @@ export default function ClientHome({ navigation }: any) {
               </Surface>
             ) : (
               recentWashes.map((w: any) => {
-                const isPending = !!active && w.id === active.id;
+                const isPending = activeList.some((a: any) => a.id === w.id);
                 // The same words as the tracker above, so the list and the
                 // progress bar never disagree about where the car is.
-                const stage = active?.status === 'ready' ? 'Finished'
-                  : active?.status === 'in_progress' ? 'In progress' : 'Booked';
+                const stage = w.status === 'ready' ? 'Finished'
+                  : w.status === 'in_progress' ? 'In progress' : 'Booked';
                 const label = isPending ? stage : w.status === 'cancelled' ? 'Cancelled' : 'Completed';
                 const amount = Number(w.amount_ugx ?? w.quoted_amount_ugx ?? 0);
                 return (
@@ -334,9 +361,9 @@ export default function ClientHome({ navigation }: any) {
                     image={artFor(w.service_name || '').image}
                     title={w.service_name || w.vehicle_class_name || 'Wash'}
                     subtitle={`${label} • ${dateLabel(w.settled_at || w.started_at || w.requested_at)}`}
-                    amount={`UGX ${compactUgx(amount).toLowerCase()}`}
-                    tone={amount === 0 ? 'accent' : 'brand'}
-                    onPress={isPending && amountDue(w) > 0 && !w.is_redemption ? () => setForcePrompt(true) : undefined}
+                    amount={w.is_redemption ? 'Free' : `UGX ${compactUgx(amount).toLowerCase()}`}
+                    tone={w.is_redemption || amount === 0 ? 'accent' : 'brand'}
+                    onPress={isPending && owesPayment(w) ? () => setForcePromptId(w.id) : undefined}
                   />
                 );
               })
@@ -350,21 +377,20 @@ export default function ClientHome({ navigation }: any) {
                   ? `${Number(points.balance).toLocaleString()} points · worth UGX ${Number(points.worth_ugx || 0).toLocaleString()}`
                   : 'Earn points on every wash'
               }
-              onPress={() => navigation.navigate('Loyalty')}
+              onPress={() => navigation.navigate('Points')}
             />
           </View>
         </View>
 
-        {/* One-time offer. available → grab (booking flow with the offer
-            attached); armed → the next booking IS the free one; used → the
-            server has already counted this client's redemption, so the card
+        {/* One-time offer: two cars on one booking, the dearer one charged.
+            available → book the pair; used → taken already, so the card
             renders inert no matter what the client's device thinks. */}
         <PromoCard
           state={promoState}
-          onPress={() => navigation.navigate('BranchScan', {
-            usePromo: promoState === 'available',
-            usePromoFree: promoState === 'armed',
-          })}
+          onPress={() =>
+            promoState === 'used'
+              ? alert('Offer already used', 'You have already used the "Wash 2 cars for the price of 1" offer on this account.')
+              : navigation.navigate('BranchScan', { usePromo: true })}
         />
       </ScrollView>
 
@@ -379,11 +405,11 @@ export default function ClientHome({ navigation }: any) {
       />
 
       <PaymentPromptSheet
-        visible={!!active && (showPaymentPrompt || forcePrompt)}
-        wash={active}
+        visible={!!promptWash}
+        wash={promptWash}
         onClose={dismissPrompt}
         onDone={(method, receiptNo) => {
-          const wash = { ...active, receipt_no: receiptNo || active?.receipt_no };
+          const wash = { ...promptWash, receipt_no: receiptNo || promptWash?.receipt_no };
           dismissPrompt();
           load();
           navigation.navigate('PaymentSuccess', { wash, method });
@@ -403,6 +429,7 @@ export default function ClientHome({ navigation }: any) {
         balance={pointsBalance}
         worthUgx={Number(points?.worth_ugx || 0)}
         entries={pointsEntries}
+        pending={pendingPoints}
         onClose={() => setPointsOpen(false)}
         onRedeem={() => {
           setPointsOpen(false);
@@ -415,15 +442,25 @@ export default function ClientHome({ navigation }: any) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
-  cancelLink: { alignSelf: 'center', paddingVertical: 6, paddingHorizontal: spacing.md, marginTop: -spacing.xs },
-  cancelText: { fontSize: font.sm, fontWeight: weight.semibold, color: colors.error },
-  tileGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, justifyContent: 'space-between' },
+  // Inset from the page edge, with the wide gutter the mockup leaves between
+  // the two columns (each tile is 43% — see HomeParts' tile).
+  tileGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.md,
+    marginTop: -spacing.sm,
+  },
+  trackerHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: 2 },
+  trackerTitle: { flex: 1, fontSize: font.sm, fontWeight: weight.bold, color: colors.text },
+  trackerFree: { fontSize: font.xs, fontWeight: weight.heavy, color: colors.accentText },
+  // The same section heading every other role now uses (SectionHeader).
   sectionLabel: {
-    fontSize: font.regular,
+    fontSize: font.lg,
     fontWeight: weight.heavy,
     color: colors.text,
     letterSpacing: tracking.tight,
-    marginBottom: spacing.sm,
+    marginBottom: spacing.sm + 2,
   },
   scroll: { flex: 1 },
   body: { padding: spacing.lg, paddingBottom: spacing.xxxl, gap: spacing.lg },

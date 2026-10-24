@@ -180,6 +180,19 @@ export const colors = {
   gradientHeadlineEnd: { x: 0.294, y: 0.956 },
   gradientHeadlineLocations: [0.056, 0.3535] as const,
 
+  // The one brand surface for headline cards on staff screens (today's
+  // takings, a wallet balance, MRR): navy, with the violet of the primary
+  // button glowing in from the top-right corner. Same two colours and the
+  // same direction as gradientButton, so the hero and the buttons under it
+  // read as one family — spread wider so a tall card stays mostly navy.
+  // Rendered through CssGradient, so web and phone paint it identically.
+  gradientHero: ['#AC00FF', '#283B8F'] as const,
+  gradientHeroLocations: [0, 0.4] as const,
+  gradientHeroAngle: 220,
+
+  // The dim laid over the screen behind any bottom sheet or dialog.
+  scrim: 'rgba(11,14,28,0.55)',
+
   // Translucent brand washes for the soft blooms on dark screens. Tokens
   // rather than inline rgba so a rebrand does not have to hunt them down —
   // which is exactly what happened to the last set.
@@ -218,6 +231,17 @@ export const colors = {
   errorSoft: '#FDECEE',
   info: '#3B7DDD',
   infoSoft: '#ECF3FD',
+
+  // The status hues above are bright enough for icons, dots and fills but
+  // not for words: amber text on its own soft fill measured ~2:1, the red
+  // ~3.8:1. These darker steps are what any status-coloured TEXT uses, and
+  // each clears 4.5:1 on both white and its matching *Soft fill.
+  successText: '#0B7A52',
+  warningText: '#9A5B05',
+  errorText: '#C42840',
+  infoText: '#2A63B8',
+  accentText: '#A84B0A',
+  primaryText: violet[600],
 
   // Borders / hairlines
   border: ink[200],
@@ -328,26 +352,88 @@ export const shadow = {
     shadowOffset: { width: 0, height: 12 },
     elevation: 10,
   },
+  // The glow under a primary button. Kept low: a list of cards that each
+  // carry a primary button turned the page into a row of violet halos.
   brand: {
     shadowColor: violet[500],
-    shadowOpacity: 0.32,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 7 },
-    elevation: 7,
+    shadowOpacity: 0.22,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 5 },
+    elevation: 5,
   },
 };
 
-// Semantic tone lookup — one place that maps a state to its color trio.
+// Semantic tone lookup — one place that maps a state to its colours.
+// `fg` paints icons, dots and bars; `text` is the readable step for words;
+// `bg` is the soft fill a tinted chip or icon tile sits on.
 export type Tone = 'primary' | 'success' | 'warning' | 'error' | 'info' | 'neutral' | 'accent';
 
-export const tone: Record<Tone, { fg: string; bg: string; border: string }> = {
-  primary: { fg: colors.primary, bg: colors.primarySoft, border: violet[200] },
-  success: { fg: colors.success, bg: colors.successSoft, border: '#B7E8D2' },
-  warning: { fg: colors.warning, bg: colors.warningSoft, border: '#F8DFAE' },
-  error:   { fg: colors.error,   bg: colors.errorSoft,   border: '#F7C3CA' },
-  info:    { fg: colors.info,    bg: colors.infoSoft,    border: '#C3D9F7' },
-  accent:  { fg: colors.accent,  bg: colors.accentSoft,  border: '#FFD2BE' },
-  neutral: { fg: ink[500],       bg: ink[50],            border: ink[200] },
+export const tone: Record<Tone, { fg: string; text: string; bg: string; border: string }> = {
+  primary: { fg: colors.primary, text: colors.primaryText, bg: colors.primarySoft, border: violet[200] },
+  success: { fg: colors.success, text: colors.successText, bg: colors.successSoft, border: '#B7E8D2' },
+  warning: { fg: colors.warning, text: colors.warningText, bg: colors.warningSoft, border: '#F8DFAE' },
+  error:   { fg: colors.error,   text: colors.errorText,   bg: colors.errorSoft,   border: '#F7C3CA' },
+  info:    { fg: colors.info,    text: colors.infoText,    bg: colors.infoSoft,    border: '#C3D9F7' },
+  accent:  { fg: colors.accent,  text: colors.accentText,  bg: colors.accentSoft,  border: '#FFD2BE' },
+  neutral: { fg: ink[500],       text: ink[600],           bg: ink[50],            border: ink[200] },
+};
+
+/**
+ * The type hierarchy, as named styles rather than loose size/weight pairs.
+ * Sentence case throughout, the way the client app writes — tracked
+ * all-caps is kept for nothing but tiny codes (a branch's "NTD").
+ *
+ *   pageTitle   a screen's own headline (greeting, "Your team")
+ *   section     a group heading above a card or list ("Recent washes")
+ *   cardTitle   the name of the thing a card or row is about
+ *   body        running text
+ *   meta        supporting lines: who, when, how many
+ *   label       the caption under or beside a figure
+ *   figure      a number inside a card
+ *   heroFigure  the one number a screen is built around
+ */
+export const typography = {
+  pageTitle: { fontSize: font.xxl, fontWeight: weight.black, color: colors.text, letterSpacing: tracking.tight },
+  section: { fontSize: font.lg, fontWeight: weight.heavy, color: colors.text, letterSpacing: tracking.tight },
+  cardTitle: { fontSize: font.regular, fontWeight: weight.bold, color: colors.text },
+  body: { fontSize: font.regular, color: colors.textSecondary, lineHeight: 20 },
+  meta: { fontSize: font.sm, color: colors.textMuted },
+  label: { fontSize: font.xs, fontWeight: weight.semibold, color: colors.textMuted },
+  figure: { fontSize: font.xl, fontWeight: weight.black, color: colors.text, letterSpacing: tracking.tight },
+  heroFigure: { fontSize: font.hero, fontWeight: weight.black, color: colors.text, letterSpacing: tracking.display },
+};
+
+/**
+ * Staff type scale — worker, manager and org admin screens (STAFF-UI-SPEC.md
+ * §1): Apple HIG / Material 3 sizes, weights 400–700 only, tabular figures on
+ * every number so amounts line up in a column. The client app keeps
+ * `typography` above, which is matched to its verified mockup.
+ *
+ * Greys are chosen by measured contrast on white: ink400 is 2.9:1 and fails
+ * for text, so the lightest staff text is ink500 (4.9:1) and anything read
+ * at a glance outdoors is ink600 (7.9:1).
+ */
+const tabular: 'tabular-nums'[] = ['tabular-nums'];
+export const staffText = {
+  muted: ink[500],
+  secondary: ink[600],
+};
+export const staffType = {
+  // One ladder with a clear step between rungs, so a heading is always
+  // bigger AND bolder than the text under it.
+  hero: { fontSize: 32, lineHeight: 38, fontWeight: weight.bold, color: colors.text, fontVariant: tabular },
+  title: { fontSize: 22, lineHeight: 28, fontWeight: weight.bold, color: colors.text },
+  section: { fontSize: 19, lineHeight: 24, fontWeight: weight.bold, color: colors.text },
+  rowTitle: { fontSize: 16, lineHeight: 22, fontWeight: weight.semibold, color: colors.text },
+  body: { fontSize: 15, lineHeight: 21, fontWeight: weight.regular, color: staffText.secondary },
+  secondary: { fontSize: 14, lineHeight: 20, fontWeight: weight.regular, color: staffText.secondary },
+  label: { fontSize: 14, lineHeight: 20, fontWeight: weight.semibold, color: colors.text },
+  meta: { fontSize: 12, lineHeight: 17, fontWeight: weight.regular, color: staffText.muted },
+  /** Small headings over a group or a figure ("Today", "Takings"): darker than meta. */
+  caption: { fontSize: 13, lineHeight: 18, fontWeight: weight.semibold, color: staffText.secondary },
+  figure: { fontSize: 20, lineHeight: 26, fontWeight: weight.bold, color: colors.text, fontVariant: tabular },
+  /** Spread into any style that shows money, counts, points or a timer. */
+  tabular: { fontVariant: tabular },
 };
 
 export const layout = {
@@ -369,3 +455,54 @@ export const layout = {
  * focus styling of its own must not use this.
  */
 export const noFocusRing = { outlineStyle: 'none' } as any;
+
+/**
+ * Org admin colour pass (COLOR-PROPOSAL.html). Staff-only and role-gated: the
+ * client's `colors` are untouched, and these apply only while an org admin is
+ * signed in. Every hue is lifted from the logo, splash, buttons or points pill.
+ */
+export const orgTheme = {
+  bg: '#F3F2FA',            // page: a hint of violet instead of neutral grey
+  border: '#E6E3F3',
+  shadowColor: '#3C1E96',
+  muted: '#5D6580',         // 5.2:1 on the page
+  // Hero: violet into deep navy, orange glow in the corner.
+  hero: ['#7B16D6', '#2B2D9E', '#16205C'] as const,
+  heroLocations: [0, 0.42, 1] as const,
+  heroAngle: 215,
+  // Orange bleeding in from the top-right corner only.
+  glowStops: ['rgba(255,122,26,0)', 'rgba(255,122,26,0)', 'rgba(255,122,26,0.38)'] as const,
+  // Header hairline: the client gradient finishing on the logo orange.
+  hairline: ['#AC00FF', '#283B8F', '#FF7A1A'] as const,
+  hairlineLocations: [0, 0.62, 1] as const,
+  // Charts
+  barBase: '#CDB8F8',
+  barOn: ['#AC00FF', '#283B8F'] as const,
+  barHot: ['#FF9D4D', '#FF7A1A'] as const,
+  // Avatar hues: bg / text pairs, picked by name so a person keeps their colour.
+  avatars: [
+    { bg: '#EFE4FF', fg: '#6B1FC9' },
+    { bg: '#E3EAFF', fg: '#283B8F' },
+    { bg: '#FFE9D6', fg: '#A84B0A' },
+    { bg: '#FCE1F7', fg: '#A8008A' },
+    { bg: '#DDF4EA', fg: '#0B7A52' },
+  ],
+  countPill: '#6B1FC9',
+  // Worker home: today strip, "ready for a car" card, row tints.
+  strip: ['#283B8F', '#7B16D6'] as const,
+  freeWash: ['#FFFFFF', '#EBDDFF', '#DCC8FF'] as const,
+  freeBorder: '#D4C2FF',
+  cashTint: '#FFF1E4',
+  rankTint: '#F2E9FF',
+};
+
+/** Set by AuthProvider from the signed-in role, so non-hook styles can read it. */
+export const orgMode = { on: false };
+/** Page background for a screen container: spread into its style array. */
+export const orgBg = () => (orgMode.on ? { backgroundColor: orgTheme.bg } : null);
+
+export function avatarHue(name?: string) {
+  let h = 0;
+  for (const ch of name || '') h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return orgTheme.avatars[h % orgTheme.avatars.length];
+}

@@ -1,15 +1,13 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../../api/AuthContext';
 import { api } from '../../api';
-import { colors, radii, font, spacing, weight, tracking } from '../../theme';
+import { colors, radii, font, spacing, weight, tracking, orgBg } from '../../theme';
 import ScreenHeader from '../../components/ScreenHeader';
 import GradientButton from '../../components/GradientButton';
-import Icon from '../../components/Icon';
 import { useAppAlert } from '../../components/AppAlert';
-import { Surface, SectionHeader, ListRow, Field, initials } from '../../components/ui';
+import { Surface, SectionHeader, ListRow, Field, Avatar } from '../../components/ui';
 
 const ROLE_LABEL: Record<string, string> = {
   worker: 'Worker',
@@ -98,7 +96,7 @@ export default function ProfileScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, orgBg()]}>
       <ScreenHeader title="Profile" subtitle={ROLE_LABEL[role] || role} />
 
       <KeyboardAvoidingView
@@ -115,15 +113,8 @@ export default function ProfileScreen() {
         showsVerticalScrollIndicator={false}
       >
         {/* Identity card */}
-        <Surface elevation="sm" style={styles.identity}>
-          <LinearGradient
-            colors={colors.gradient}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.avatar}
-          >
-            <Text style={styles.avatarText}>{initials(displayName)}</Text>
-          </LinearGradient>
+        <Surface elevation="sm" padded="lg" style={styles.identity}>
+          <Avatar name={displayName} size={58} variant="brand" />
 
           <View style={{ flex: 1 }}>
             <Text style={styles.name} numberOfLines={1}>{displayName}</Text>
@@ -133,14 +124,14 @@ export default function ProfileScreen() {
                 ? <Text style={styles.handle}>@{actor.username}</Text>
                 : null}
             <View style={styles.roleTag}>
-              <Text style={styles.roleTagText}>{(ROLE_LABEL[role] || role).toUpperCase()}</Text>
+              <Text style={styles.roleTagText}>{ROLE_LABEL[role] || role}</Text>
             </View>
           </View>
         </Surface>
 
         {/* Editable details */}
         <View>
-          <SectionHeader title="Your details" icon="user-edit" />
+          <SectionHeader title="Your details" />
           <Surface elevation="sm">
             <Field label="Full name" required value={fullName} onChangeText={setFullName} placeholder="Your name" />
             <Field
@@ -174,8 +165,8 @@ export default function ProfileScreen() {
 
         {/* Account actions */}
         <View>
-          <SectionHeader title="Account" icon="cog" />
-          <Surface elevation="sm" padded="sm">
+          <SectionHeader title="Account" />
+          <Surface elevation="sm" padded="sm" style={{ paddingHorizontal: spacing.md }}>
             <ListRow
               leading="sign-out-alt"
               leadingTone="error"
@@ -205,15 +196,10 @@ export default function ProfileScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   scroll: { flex: 1 },
-  body: { padding: spacing.lg, paddingBottom: spacing.xxxl, gap: spacing.lg },
+  body: { padding: spacing.lg, paddingBottom: spacing.xxxl, gap: spacing.xl },
 
   identity: { flexDirection: 'row', alignItems: 'center', gap: spacing.lg },
-  avatar: {
-    width: 58, height: 58, borderRadius: radii.full,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  avatarText: { fontSize: font.xl, fontWeight: weight.black, color: '#fff', letterSpacing: 0.5 },
-  name: { fontSize: font.lg, fontWeight: weight.black, color: colors.text, letterSpacing: tracking.tight },
+  name: { fontSize: font.xl, fontWeight: weight.heavy, color: colors.text, letterSpacing: tracking.tight },
   handle: { fontSize: font.sm, color: colors.textMuted, marginTop: 1 },
   roleTag: {
     alignSelf: 'flex-start',
@@ -223,5 +209,5 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
     marginTop: spacing.sm,
   },
-  roleTagText: { fontSize: font.micro, fontWeight: weight.heavy, color: colors.primary, letterSpacing: tracking.capsWide },
+  roleTagText: { fontSize: font.xs, fontWeight: weight.bold, color: colors.primaryText },
 });

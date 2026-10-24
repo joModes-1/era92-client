@@ -27,12 +27,12 @@ export default function BranchScanScreen() {
   const [busy, setBusy] = useState(false);
 
   // Threaded through from LoyaltyScreen's "Redeem" button (useFreeWash) and
-  // from the home screen's promo card (usePromo when grabbing, usePromoFree
-  // when the offer is armed and this next booking is the free one) — carries
-  // all the way to BookWashScreen so the eventual booking carries the right
-  // flag. preselectServiceName comes from tapping a service tile on the
-  // home screen directly, rather than the generic "Scan to wash" bar.
-  const { useFreeWash, usePromo, usePromoFree, preselectServiceName, payWithPoints } = route.params || {};
+  // from the home screen's promo card (usePromo: book two cars for the price
+  // of one) — carried all the way to BookWashScreen so the eventual booking
+  // is the right kind. preselectServiceName comes from tapping a service
+  // tile on the home screen directly, rather than the generic "Scan to wash"
+  // bar.
+  const { useFreeWash, usePromo, preselectServiceName, payWithPoints } = route.params || {};
 
   const resolveBranch = async (code: string) => {
     if (!actor?.org_id) {
@@ -45,9 +45,8 @@ export default function BranchScanScreen() {
       navigation.replace('BookWash', {
         branchId: branch.id,
         branchName: branch.name,
-        useFreeWash: useFreeWash && !usePromo && !usePromoFree,
+        useFreeWash: useFreeWash && !usePromo,
         usePromo,
-        usePromoFree,
         preselectServiceName,
         payWithPoints,
       });

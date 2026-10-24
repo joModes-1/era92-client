@@ -3,8 +3,7 @@ import { View, Text, StyleSheet } from 'react-native';
 import { api } from '../../api';
 import { colors, font, spacing, weight, tracking } from '../../theme';
 import { ReportScreen, rangeLabel, today, weekAgo } from './reportHelpers';
-import { Surface, SectionHeader, EmptyState, ListRow, MiniBar, initials } from '../../components/ui';
-import Badge from '../../components/Badge';
+import { Surface, SectionHeader, EmptyState, MiniBar } from '../../components/ui';
 
 /** A high cancel rate is the signal worth flagging, not the raw count. */
 function rateTone(pct: number) {
@@ -55,12 +54,12 @@ export default function CancellationsReportScreen() {
                       <Text
                         style={[
                           styles.rate,
-                          { color: t === 'error' ? colors.error : t === 'warning' ? colors.warning : colors.text },
+                          { color: t === 'error' ? colors.errorText : t === 'warning' ? colors.warningText : colors.text },
                         ]}
                       >
                         {pct}%
                       </Text>
-                      <Text style={styles.rateLabel}>RATE</Text>
+                      <Text style={styles.rateLabel}>Cancel rate</Text>
                     </View>
                   </View>
 
@@ -72,7 +71,7 @@ export default function CancellationsReportScreen() {
 
                   {c.cancel_reason ? (
                     <View style={styles.reasonWrap}>
-                      <Text style={styles.reasonLabel}>MOST COMMON REASON</Text>
+                      <Text style={styles.reasonLabel}>Most common reason</Text>
                       <Text style={styles.reason} numberOfLines={2}>{c.cancel_reason}</Text>
                     </View>
                   ) : null}
@@ -91,16 +90,16 @@ const styles = StyleSheet.create({
   top: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
   who: { flex: 1, gap: 2 },
   name: { fontSize: font.regular, fontWeight: weight.heavy, color: colors.text, letterSpacing: tracking.tight },
-  count: { fontSize: font.xs, color: colors.textMuted, fontWeight: weight.medium },
+  count: { fontSize: font.sm, color: colors.textMuted, fontWeight: weight.medium },
   rateCol: { alignItems: 'flex-end' },
-  rate: { fontSize: font.xxl, fontWeight: weight.black, letterSpacing: tracking.display },
-  rateLabel: { fontSize: font.micro, fontWeight: weight.bold, color: colors.textMuted, letterSpacing: tracking.caps },
+  rate: { fontSize: font.xxl, fontWeight: weight.black, letterSpacing: tracking.tight },
+  rateLabel: { fontSize: font.xs, fontWeight: weight.semibold, color: colors.textMuted },
   reasonWrap: {
-    backgroundColor: colors.bgSunken,
+    backgroundColor: colors.bg,
     borderRadius: 10,
     padding: spacing.md,
     gap: 3,
   },
-  reasonLabel: { fontSize: font.micro, fontWeight: weight.heavy, color: colors.textMuted, letterSpacing: tracking.caps },
-  reason: { fontSize: font.sm, color: colors.textSecondary, lineHeight: 17 },
+  reasonLabel: { fontSize: font.xs, fontWeight: weight.semibold, color: colors.textMuted },
+  reason: { fontSize: font.sm, color: colors.textSecondary, lineHeight: 18 },
 });

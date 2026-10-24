@@ -1,6 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import { colors, radii, font, spacing, weight, tracking } from '../../theme';
+import { LinearGradient } from 'expo-linear-gradient';
+import { colors, radii, font, spacing, weight, tracking, orgTheme } from '../../theme';
+import { useIsBranded } from './useIsStaff';
 
 export type TrendPoint = { day: string; value: number; sub?: number };
 
@@ -50,6 +52,7 @@ export default function TrendChart({
   height?: number;
 }) {
   const [selected, setSelected] = useState<number | null>(null);
+  const orgAdmin = useIsBranded();
 
   const max = useMemo(
     () => Math.max(...points.map((p) => p.value), 0),
@@ -107,10 +110,20 @@ export default function TrendChart({
               onPress={() => setSelected(isSelected ? null : i)}
             >
               {labelled ? (
-                <Text style={styles.barLabel} numberOfLines={1}>{compact(p.value)}</Text>
+                // No numberOfLines: react-native-web pins single-line text
+                // to maxWidth 100% of the column, which is what clipped it.
+                <View style={styles.barLabelBox}>
+                  <Text style={styles.barLabel}>{compact(p.value)}</Text>
+                </View>
               ) : (
                 <View style={styles.barLabelSpacer} />
               )}
+              {orgAdmin && p.value > 0 ? (
+                <LinearGradient
+                  colors={isSelected || (!active && isPeak) ? orgTheme.barOn : [orgTheme.barBase, orgTheme.barBase]}
+                  style={[styles.bar, { height: barH }]}
+                />
+              ) : (
               <View
                 style={[
                   styles.bar,
@@ -125,6 +138,7 @@ export default function TrendChart({
                   },
                 ]}
               />
+              )}
             </TouchableOpacity>
           );
         })}
@@ -167,11 +181,12 @@ const styles = StyleSheet.create({
   // 2px surface gap between adjacent fills comes from the row gap above;
   // the rounded top is the data-end, the baseline end stays square.
   bar: { width: '100%', borderTopLeftRadius: 4, borderTopRightRadius: 4, minHeight: 2 },
-  barLabel: {
-    fontSize: font.micro, fontWeight: weight.heavy,
-    color: colors.textSecondary, marginBottom: 3,
-  },
-  barLabelSpacer: { height: 14 },
+  // Wider than its column on purpose: over a 14-day window a column is
+  // ~20px, so "461K" was cut to "4…". A fixed width centred on the column
+  // lets the label overhang its neighbours, which are unlabelled anyway.
+  barLabelBox: { width: 48, alignItems: 'center', marginBottom: 3 },
+  barLabel: { fontSize: font.xs, fontWeight: weight.heavy, color: colors.text, textAlign: 'center' },
+  barLabelSpacer: { height: 16 },
 
   axis: { height: StyleSheet.hairlineWidth, backgroundColor: colors.border, marginTop: 1 },
 

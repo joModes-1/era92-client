@@ -1,14 +1,17 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { api } from '../../api';
 import { colors, font, spacing, weight, tracking } from '../../theme';
 import { ReportScreen, today } from './reportHelpers';
-import { Surface, SectionHeader, EmptyState, MetricStrip, ListRow, MiniBar, initials } from '../../components/ui';
+import { HeroCard, Surface, SectionHeader, EmptyState, MetricStrip, ListRow, MiniBar, initials } from '../../components/ui';
 import Icon from '../../components/Icon';
+import { useIsOrgAdmin } from '../../components/ui/useIsStaff';
 
 const ugx = (n: any) => Number(n || 0).toLocaleString();
 
 export default function DailyReportScreen() {
+  const orgAdmin = useIsOrgAdmin();
   const date = today();
   const pretty = new Date(date + 'T00:00:00').toLocaleDateString(undefined, {
     weekday: 'long', month: 'long', day: 'numeric',
@@ -30,10 +33,22 @@ export default function DailyReportScreen() {
         return (
           <View style={{ gap: spacing.lg }}>
             {/* Hero: the one number that matters today */}
-            <Surface elevation="md" padded="lg" style={styles.hero}>
+            {orgAdmin ? (
+              <HeroCard
+                label="Gross takings"
+                prefix="UGX"
+                value={ugx(s.gross_ugx)}
+                stats={[
+                  { label: 'Washes', value: Number(s.settled_washes || 0) },
+                  { label: 'Rewards', value: Number(s.redemption_count || 0) },
+                  { label: 'Handovers', value: Number(s.handover_count || 0) },
+                ]}
+              />
+            ) : (
+            <LinearGradient colors={colors.promoBanner} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.hero}>
               <View style={styles.heroTop}>
                 <View>
-                  <Text style={styles.heroLabel}>GROSS TAKINGS</Text>
+                  <Text style={styles.heroLabel}>Gross takings</Text>
                   <View style={styles.amountRow}>
                     <Text style={styles.currency}>UGX</Text>
                     <Text style={styles.amount} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.55}>
@@ -51,17 +66,18 @@ export default function DailyReportScreen() {
               <MetricStrip
                 items={[
                   { label: 'Washes', value: Number(s.settled_washes || 0) },
-                  { label: 'Rewards', value: Number(s.redemption_count || 0), tone: 'accent' },
-                  { label: 'Handovers', value: Number(s.handover_count || 0), tone: 'info' },
+                  { label: 'Rewards', value: Number(s.redemption_count || 0) },
+                  { label: 'Handovers', value: Number(s.handover_count || 0) },
                 ]}
               />
-            </Surface>
+            </LinearGradient>
+            )}
 
             {/* Per-worker contribution */}
             {workers.length > 0 && (
               <View>
                 <SectionHeader title="By worker" count={workers.length} icon="users" />
-                <Surface elevation="sm" padded="sm">
+                <Surface elevation="sm" padded="sm" style={{ paddingHorizontal: spacing.md }}>
                   {workers.map((w: any, i: number) => (
                     <ListRow
                       key={i}
@@ -77,7 +93,7 @@ export default function DailyReportScreen() {
                           <MiniBar
                             value={Number(w.cash_taken_ugx || 0)}
                             max={topWorker}
-                            color={i === 0 ? colors.primary : colors.ink[300]}
+                            color={i === 0 ? colors.primary : colors.primaryTint}
                           />
                         </View>
                       }
@@ -94,12 +110,13 @@ export default function DailyReportScreen() {
 }
 
 const styles = StyleSheet.create({
-  hero: { gap: spacing.lg },
-  heroTop: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
-  heroLabel: {
-    fontSize: font.xs, fontWeight: weight.heavy,
-    color: colors.textMuted, letterSpacing: tracking.capsWide, marginBottom: 6,
+  // The client home's rewards-banner wash, as on every staff figure card.
+  hero: {
+    gap: spacing.lg, padding: spacing.lg, borderRadius: 22,
+    borderWidth: 1, borderColor: colors.promoBannerBorder, overflow: 'hidden',
   },
+  heroTop: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
+  heroLabel: { fontSize: font.sm, fontWeight: weight.semibold, color: colors.textMuted, marginBottom: 4 },
   amountRow: { flexDirection: 'row', alignItems: 'baseline', gap: 6 },
   currency: { fontSize: font.regular, fontWeight: weight.heavy, color: colors.textMuted },
   amount: { fontSize: font.hero, fontWeight: weight.black, color: colors.text, letterSpacing: tracking.display },

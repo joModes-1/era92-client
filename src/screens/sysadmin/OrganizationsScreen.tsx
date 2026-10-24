@@ -8,7 +8,7 @@ import ScreenHeader, { HeaderAction } from '../../components/ScreenHeader';
 import Badge from '../../components/Badge';
 import { useAppAlert } from '../../components/AppAlert';
 import {
-  Surface, SectionHeader, EmptyState, SkeletonList, Field, FormSheet,
+  Surface, SectionHeader, EmptyState, SkeletonList, Field, FormSheet, NoticeRow,
 } from '../../components/ui';
 
 /** Auto-derive a URL-safe slug so the sysadmin does not have to invent one. */
@@ -277,8 +277,8 @@ export default function OrganizationsScreen() {
             onPress={() => openAddAdmin(org)}
             activeOpacity={0.6}
           >
-            <Icon name="user-shield" size={11} color={colors.primary} />
-            <Text style={[styles.actionText, { color: colors.primary }]}>Add admin</Text>
+            <Icon name="user-shield" size={12} color={colors.primary} />
+            <Text style={[styles.actionText, { color: colors.primaryText }]}>Add admin</Text>
           </TouchableOpacity>
 
           <View style={styles.actionDivider} />
@@ -291,10 +291,10 @@ export default function OrganizationsScreen() {
           >
             <Icon
               name={isActive ? 'ban' : 'check-circle'}
-              size={11}
+              size={12}
               color={isActive ? colors.error : colors.success}
             />
-            <Text style={[styles.actionText, { color: isActive ? colors.error : colors.success }]}>
+            <Text style={[styles.actionText, { color: isActive ? colors.errorText : colors.successText }]}>
               {isActive ? 'Suspend' : 'Activate'}
             </Text>
           </TouchableOpacity>
@@ -318,19 +318,13 @@ export default function OrganizationsScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} />}
       >
         {overdueCount > 0 && (
-          <Surface
-            elevation="sm"
-            tone={colors.errorSoft}
-            borderless
+          <NoticeRow
+            tone="error"
+            icon="exclamation-triangle"
+            title={`${overdueCount} organisation${overdueCount === 1 ? ' is' : 's are'} past due on payment`}
+            subtitle="Open Billing to see who to chase"
             onPress={() => navigation.navigate('Billing')}
-            style={styles.overdueBanner}
-          >
-            <Icon name="exclamation-triangle" size={13} color={colors.error} />
-            <Text style={styles.overdueText}>
-              {overdueCount} organisation{overdueCount === 1 ? ' is' : 's are'} past due on payment
-            </Text>
-            <Icon name="chevron-right" size={11} color={colors.error} />
-          </Surface>
+          />
         )}
 
         {orgs.length === 0 ? (
@@ -369,7 +363,7 @@ export default function OrganizationsScreen() {
         onSubmit={submitCreate}
         submitting={creating}
       >
-        <Text style={styles.groupLabel}>ORGANIZATION</Text>
+        <Text style={styles.groupLabel}>Organization</Text>
         <Field label="Name" required value={name} onChangeText={onNameChange} placeholder="e.g. Shine Motors" />
         <Field
           label="Slug"
@@ -383,7 +377,7 @@ export default function OrganizationsScreen() {
         <Field label="Contact name" value={contactName} onChangeText={setContactName} placeholder="e.g. Shine Owner" />
         <Field label="Phone" value={phone} onChangeText={setPhone} placeholder="+256700000000" keyboardType="phone-pad" />
 
-        <Text style={styles.groupLabel}>FIRST ORG ADMIN</Text>
+        <Text style={[styles.groupLabel, styles.groupLabelNext]}>First org admin</Text>
         <Field label="Admin name" required value={adminName} onChangeText={setAdminName} placeholder="e.g. Jane Doe" />
         <Field
           label="Admin email"
@@ -446,7 +440,7 @@ export default function OrganizationsScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   scroll: { flex: 1 },
-  body: { padding: spacing.lg, paddingBottom: spacing.xxxl, gap: spacing.lg },
+  body: { padding: spacing.lg, paddingBottom: spacing.xxxl, gap: spacing.xl },
 
   card: { gap: spacing.md },
   cardOff: { opacity: 0.72 },
@@ -460,24 +454,21 @@ const styles = StyleSheet.create({
   markText: { fontSize: font.lg, fontWeight: weight.black, color: '#fff' },
   who: { flex: 1, gap: 2 },
   name: { fontSize: font.regular, fontWeight: weight.heavy, color: colors.text, letterSpacing: tracking.tight },
-  meta: { fontSize: font.xs, color: colors.textMuted },
+  meta: { fontSize: font.sm, color: colors.textMuted },
 
   stats: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: colors.bgSunken, borderRadius: radii.md,
+    backgroundColor: colors.bg, borderRadius: radii.md,
     paddingVertical: spacing.md, paddingHorizontal: spacing.md,
   },
-  stat: { flex: 1, gap: 1 },
+  stat: { flex: 1, gap: 2 },
   statValue: { fontSize: font.lg, fontWeight: weight.black, color: colors.text, letterSpacing: tracking.tight },
-  statLabel: { fontSize: font.micro, color: colors.textMuted },
+  statLabel: { fontSize: font.xs, color: colors.textMuted, fontWeight: weight.medium },
   statDivide: { width: StyleSheet.hairlineWidth, height: 28, backgroundColor: colors.border, marginHorizontal: spacing.md },
 
   badges: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
-  due: { fontSize: font.micro, color: colors.textMuted, fontWeight: weight.semibold },
-  dueLate: { color: colors.error, fontWeight: weight.heavy },
-
-  overdueBanner: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  overdueText: { flex: 1, fontSize: font.sm, fontWeight: weight.heavy, color: colors.error },
+  due: { fontSize: font.xs, color: colors.textMuted, fontWeight: weight.semibold },
+  dueLate: { color: colors.errorText, fontWeight: weight.heavy },
 
   actions: {
     flexDirection: 'row',
@@ -490,8 +481,9 @@ const styles = StyleSheet.create({
   actionDivider: { width: StyleSheet.hairlineWidth, height: 16, backgroundColor: colors.border },
   actionText: { fontSize: font.sm, fontWeight: weight.bold },
 
-  groupLabel: {
-    fontSize: font.micro, fontWeight: weight.heavy, color: colors.primary,
-    letterSpacing: tracking.capsWide, marginBottom: spacing.md,
+  groupLabel: { fontSize: font.regular, fontWeight: weight.heavy, color: colors.text, marginBottom: spacing.md },
+  groupLabelNext: {
+    marginTop: spacing.xs, paddingTop: spacing.lg,
+    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.borderLight,
   },
 });

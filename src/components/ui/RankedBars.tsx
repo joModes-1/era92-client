@@ -1,6 +1,8 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import { colors, radii, font, spacing, weight, tracking } from '../../theme';
+import { LinearGradient } from 'expo-linear-gradient';
+import { colors, radii, font, spacing, weight, tracking, orgTheme } from '../../theme';
+import { useIsBranded } from './useIsStaff';
 
 export type RankedItem = {
   key: string;
@@ -30,6 +32,7 @@ export default function RankedBars({
   valuePrefix?: string;
   onPress?: (item: RankedItem) => void;
 }) {
+  const orgAdmin = useIsBranded();
   const max = Math.max(...items.map((i) => i.value), 1);
 
   return (
@@ -56,6 +59,13 @@ export default function RankedBars({
             </View>
 
             <View style={styles.track}>
+              {orgAdmin && !dead ? (
+                <LinearGradient
+                  colors={leader ? orgTheme.barOn : [orgTheme.barBase, orgTheme.barBase]}
+                  start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+                  style={[styles.bar, { width: `${Math.max(pct, 2)}%`, height: 8 }]}
+                />
+              ) : (
               <View
                 style={[
                   styles.bar,
@@ -70,6 +80,7 @@ export default function RankedBars({
                   },
                 ]}
               />
+              )}
             </View>
 
             {item.meta ? (

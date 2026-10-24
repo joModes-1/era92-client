@@ -1,7 +1,7 @@
 import React, { useState, useCallback, ReactNode } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import { View, Text, StyleSheet, ScrollView, RefreshControl } from 'react-native';
-import { colors, radii, font, spacing, weight, tracking, shadow } from '../../theme';
+import { colors, radii, font, spacing, weight, tracking, shadow, orgBg } from '../../theme';
 import Badge from '../../components/Badge';
 import StatCard from '../../components/StatCard';
 import ScreenHeader from '../../components/ScreenHeader';
@@ -64,7 +64,7 @@ export function ReportScreen({
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, orgBg()]}>
       <ScreenHeader title={title} subtitle={subtitle} action={headerAction}>
         {loaded && !error && headerRail ? headerRail(data) : null}
       </ScreenHeader>

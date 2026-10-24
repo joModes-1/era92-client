@@ -53,12 +53,20 @@ export default function AppTopBar({
       {right}
 
       {onMenu ? (
-        <TouchableOpacity onPress={onMenu} hitSlop={10} style={s.menuBtn} activeOpacity={0.6}>
+        <TouchableOpacity
+          onPress={onMenu}
+          hitSlop={10}
+          style={s.menuBtn}
+          activeOpacity={0.6}
+          accessibilityRole="button"
+          accessibilityLabel="Open menu"
+        >
           <View style={s.menuLine} />
           <View style={s.menuLine} />
           <View style={s.menuLine} />
         </TouchableOpacity>
       ) : null}
+      
     </View>
   );
 }
@@ -80,9 +88,9 @@ export function TopBarPill({
 }) {
   const TONE: Record<string, { bg: string; fg: string }> = {
     neutral: { bg: colors.bgSunken, fg: colors.textSecondary },
-    warning: { bg: colors.warningSoft, fg: colors.warning },
-    error: { bg: colors.errorSoft, fg: colors.error },
-    success: { bg: colors.successSoft, fg: colors.success },
+    warning: { bg: colors.warningSoft, fg: colors.warningText },
+    error: { bg: colors.errorSoft, fg: colors.errorText },
+    success: { bg: colors.successSoft, fg: colors.successText },
   };
   const t = TONE[tone] || TONE.neutral;
   const Wrap: any = onPress ? TouchableOpacity : View;

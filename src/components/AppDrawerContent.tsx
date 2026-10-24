@@ -3,29 +3,11 @@ import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-nati
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { DrawerContentComponentProps } from '@react-navigation/drawer';
 import { useAuth } from '../api/AuthContext';
-import { colors, radii, font, spacing, weight, tracking } from '../theme';
+import { colors, font, spacing, weight } from '../theme';
 import Icon from './Icon';
 import CssGradient from './CssGradient';
 import CarWashLogo from './CarWashLogo';
 import Era92Logo from './Era92Logo';
-
-const ROLE_LABEL: Record<string, string> = {
-  worker: 'Worker',
-  manager: 'Manager',
-  orgadmin: 'Org Admin',
-  sysadmin: 'Platform Admin',
-  client: 'Client',
-};
-
-const ROLE_ICON: Record<string, string> = {
-  // 'hard-hat', not 'user-hard-hat' — the latter is FontAwesome 5 Pro only
-  // and throws "not a valid icon name" with the free set bundled here.
-  worker: 'hard-hat',
-  manager: 'user-tie',
-  orgadmin: 'user-tie',
-  sysadmin: 'user-cog',
-  client: 'user',
-};
 
 const ROUTE_ICON: Record<string, string> = {
   'Current Car': 'car',
@@ -45,10 +27,8 @@ const ROUTE_ICON: Record<string, string> = {
   'Overview': 'chart-pie',
   'Organizations': 'building',
   'Platform Admins': 'user-shield',
-  'Active Wash': 'car',
   'History': 'history',
-  'Loyalty': 'star',
-  'Points History': 'list-alt',
+  'Points': 'star',
   'Profile': 'user-circle',
   'Report a problem': 'life-ring',
   'Home': 'home',
@@ -68,17 +48,22 @@ const HIDDEN_ROUTES = new Set(['Org Detail']);
 
 // Grouping gives long role menus a readable structure instead of one flat list.
 const GROUPS: { title: string; routes: string[] }[] = [
-  { title: 'Today', routes: ['Current Car', 'Shift & Queue', 'Active Wash', 'Home', 'Overview', 'Cash Handover', 'Daily Report'] },
-  { title: 'Reports', routes: ['Performance', 'Cash Variance', 'Stale Alerts', 'Exceptions', 'Handovers', 'Cancellations', 'History', 'Points History', 'Audit Log'] },
+  { title: 'Today', routes: ['Current Car', 'Shift & Queue', 'Home', 'Overview', 'Cash Handover', 'Daily Report'] },
+  { title: 'Reports', routes: ['Performance', 'Cash Variance', 'Stale Alerts', 'Exceptions', 'Handovers', 'Cancellations', 'History', 'Audit Log'] },
   { title: 'Manage', routes: ['Staff', 'Branches', 'Catalogue', 'Prices', 'Points Settings', 'Customers', 'Organizations', 'Billing', 'Platform Admins'] },
-  { title: 'You', routes: ['My Account', 'My Points', 'Leaderboard', 'Loyalty', 'Report a problem', 'Profile'] },
+  { title: 'You', routes: ['My Account', 'My Points', 'Leaderboard', 'Points', 'Report a problem', 'Profile'] },
 ];
+
+// A client's menu is five pages — headings over one or two items each are
+// noise, so it is one plain list (still in the order above).
+const FLAT_MENU_ROLES = new Set(['client']);
 
 export default function AppDrawerContent(props: DrawerContentComponentProps) {
   const { actor, logout } = useAuth();
   const role = actor?.role || actor?.type || 'client';
-  const name = actor?.full_name || (role === 'client' ? actor?.username : ROLE_LABEL[role]) || 'Account';
-  const subtitle = actor?.branch_name || actor?.org_name || (role === 'client' ? actor?.username : ROLE_LABEL[role]);
+  // Staff menus use the staff type scale (STAFF-UI-SPEC.md); the client
+  // menu keeps the sizes it was approved with.
+  const staff = role !== 'client';
 
   const routes = props.state.routes;
   const routeNames = routes.map((r) => r.name).filter((n) => !HIDDEN_ROUTES.has(n));
@@ -101,10 +86,10 @@ export default function AppDrawerContent(props: DrawerContentComponentProps) {
 
     const content = (
       <>
-        <View style={[styles.itemIcon, focused && styles.itemIconActive]}>
-          <Icon name={ROUTE_ICON[route.name] || 'circle'} size={13} color={focused ? '#fff' : BRAND_VIOLET} />
+        <View style={[styles.itemIcon, staff && styles.itemIconStaff, focused && styles.itemIconActive]}>
+          <Icon name={ROUTE_ICON[route.name] || 'circle'} size={staff ? 16 : 13} color={focused ? '#fff' : BRAND_VIOLET} />
         </View>
-        <Text style={[styles.itemLabel, focused && styles.itemLabelActive]} numberOfLines={1}>{label}</Text>
+        <Text style={[styles.itemLabel, staff && styles.itemLabelStaff, focused && styles.itemLabelActive]} numberOfLines={1}>{label}</Text>
         {focused ? <Icon name="chevron-right" size={10} color="rgba(255,255,255,0.85)" /> : null}
       </>
     );
@@ -137,29 +122,26 @@ export default function AppDrawerContent(props: DrawerContentComponentProps) {
   return (
     <View style={styles.container}>
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-        {/* Brand mark — the same lockup as the client app's top bar. */}
+        {/* Brand mark — the same lockup as the client app's top bar. Only the
+            logo: who is signed in lives on Profile. */}
         <View style={styles.brand}>
-          <CarWashLogo height={24} />
-        </View>
-
-        {/* Who is signed in — a plain line, not a banner. */}
-        <View style={styles.who}>
-          <Text style={styles.name} numberOfLines={1}>{name}</Text>
-          <Text style={styles.subtitle} numberOfLines={1}>
-            {[ROLE_LABEL[role] || role, subtitle].filter(Boolean).join(' · ')}
-          </Text>
+          <CarWashLogo height={20} />
         </View>
 
         {/* Grouped nav */}
         {/* Scrollbar on: a long menu (manager, org admin) runs past the screen,
             and without it nothing says there is more below. */}
         <ScrollView style={styles.menu} contentContainerStyle={styles.menuContent} showsVerticalScrollIndicator>
-          {grouped.map((g) => (
-            <View key={g.title} style={styles.group}>
-              <Text style={styles.groupTitle}>{g.title.toUpperCase()}</Text>
-              {g.routes.map(renderItem)}
-            </View>
-          ))}
+          {FLAT_MENU_ROLES.has(role) ? (
+            <View style={styles.group}>{grouped.flatMap((g) => g.routes).map(renderItem)}</View>
+          ) : (
+            grouped.map((g) => (
+              <View key={g.title} style={styles.group}>
+                <Text style={[styles.groupTitle, staff && styles.groupTitleStaff]}>{g.title}</Text>
+                {g.routes.map(renderItem)}
+              </View>
+            ))
+          )}
         </ScrollView>
 
         <View style={styles.footer}>
@@ -180,9 +162,9 @@ export default function AppDrawerContent(props: DrawerContentComponentProps) {
 }
 
 // The client app's palette: white surfaces, violet accent, deep-navy text.
-const BRAND_VIOLET = '#AC00FF';
-const NAVY = '#1B1F3B';
-const NAVY_MUTED = '#8A90A6';
+const BRAND_VIOLET = colors.primary;
+const NAVY = colors.text;
+const NAVY_MUTED = colors.textMuted;
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff' },
@@ -190,21 +172,16 @@ const styles = StyleSheet.create({
 
   brand: { paddingHorizontal: spacing.lg, paddingTop: spacing.lg, paddingBottom: spacing.md },
 
-  who: { paddingHorizontal: spacing.lg, paddingBottom: spacing.sm },
-  name: { fontSize: font.regular, fontWeight: weight.heavy, color: NAVY, letterSpacing: tracking.tight },
-  subtitle: { fontSize: font.xs, color: NAVY_MUTED, marginTop: 2, fontWeight: weight.medium },
-
   // minHeight 0 lets the list shrink to the space above the footer. Without
   // it the web build sized the list to its content, so the last items sat
   // underneath Log out — and tapping them signed people out.
-  menu: { flex: 1, minHeight: 0, marginTop: spacing.lg },
+  menu: { flex: 1, minHeight: 0, marginTop: spacing.sm },
   menuContent: { paddingBottom: spacing.lg, paddingHorizontal: spacing.md },
   group: { marginBottom: spacing.md },
   groupTitle: {
-    fontSize: font.micro,
-    fontWeight: weight.heavy,
+    fontSize: font.sm,
+    fontWeight: weight.bold,
     color: NAVY_MUTED,
-    letterSpacing: tracking.capsWide,
     marginBottom: spacing.xs,
     marginLeft: spacing.md,
   },
@@ -220,10 +197,13 @@ const styles = StyleSheet.create({
   itemActive: { borderRadius: 14 },
   itemIcon: {
     width: 30, height: 30, borderRadius: 10,
-    backgroundColor: '#F4ECFF',
+    backgroundColor: colors.primarySoft,
     alignItems: 'center', justifyContent: 'center',
   },
   itemIconActive: { backgroundColor: 'rgba(255,255,255,0.2)' },
+  itemIconStaff: { width: 34, height: 34, borderRadius: 11 },
+  itemLabelStaff: { fontSize: 15, lineHeight: 20 },
+  groupTitleStaff: { fontSize: 13, lineHeight: 18, fontWeight: weight.semibold, color: colors.ink[600] },
   itemLabel: { fontSize: font.regular, fontWeight: weight.semibold, color: NAVY, flex: 1 },
   itemLabelActive: { color: '#fff', fontWeight: weight.bold },
 
@@ -233,7 +213,7 @@ const styles = StyleSheet.create({
     paddingTop: spacing.sm,
     paddingBottom: spacing.md,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#E6E8F0',
+    borderTopColor: colors.borderLight,
   },
   logoutBtn: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: 8 },
   logoutIcon: {

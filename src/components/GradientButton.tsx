@@ -1,11 +1,21 @@
 import React, { useState } from 'react';
 import { LinearGradient } from 'expo-linear-gradient';
 import { TouchableOpacity, Text, View, StyleSheet, ActivityIndicator, ViewStyle, LayoutChangeEvent } from 'react-native';
-import { colors, radii, font, spacing, weight, shadow, tracking } from '../theme';
+import { useIsBranded } from './ui/useIsStaff';
+import { colors, radii, font, spacing, weight, shadow } from '../theme';
 import Icon from './Icon';
 import { cssGradientPoints } from '../utils/cssGradient';
 
-type Variant = 'primary' | 'secondary' | 'danger' | 'ghost' | 'success' | 'dark';
+/**
+ * primary    the screen's main action — the client app's navy/violet button
+ * tonal      a soft violet fill for an action repeated down a list
+ *            ("Receive money" on every worker), where a row of full-strength
+ *            gradient buttons would each compete to be the main one
+ * secondary  outlined
+ * ghost      text only
+ * success / danger / dark  solid fills for a state-changing step
+ */
+type Variant = 'primary' | 'tonal' | 'secondary' | 'danger' | 'ghost' | 'success' | 'dark';
 type Size = 'sm' | 'md' | 'lg' | 'action';
 
 export type GradientButtonProps = Props;
@@ -53,12 +63,14 @@ function Content({ icon, iconRight, iconColor, textStyle, title, iconSize }: any
 }
 
 export default function GradientButton({
-  title, onPress, variant = 'primary', size = 'md', loading, disabled, style, icon, iconRight, full,
+  title, onPress, variant: variantProp = 'primary', size = 'md', loading, disabled, style, icon, iconRight, full,
   gradientColors, gradientLocations, gradientStart, gradientEnd, gradientAngle,
 }: Props) {
+  // Org admin: a lone "tonal" action reads as an empty field on the tinted page, so it takes the brand gradient.
+  const orgAdmin = useIsBranded();
+  const variant = orgAdmin && variantProp === 'tonal' ? 'primary' : variantProp;
   const s = SIZES[size];
   const isOff = disabled || loading;
-  const isAction = size === 'action';
   // Real rendered size, so a CSS angle can be turned into the right
   // start/end points for this box (see utils/cssGradient.ts).
   const [box, setBox] = useState({ w: 343, h: s.h });
@@ -66,7 +78,6 @@ export default function GradientButton({
     const { width, height } = e.nativeEvent.layout;
     if (width !== box.w || height !== box.h) setBox({ w: width, h: height });
   };
-  const angled = isAction || gradientAngle !== undefined;
   const actionPoints = cssGradientPoints(gradientAngle ?? colors.gradientButtonAngle, box.w, box.h);
   const base: ViewStyle = {
     minHeight: s.h,
@@ -93,6 +104,22 @@ export default function GradientButton({
         {loading
           ? <ActivityIndicator color={colors.primary} size="small" />
           : <Content {...{ icon, iconRight, iconSize: s.icon }} iconColor={colors.primary} textStyle={[label, { color: colors.primary }]} title={title} />}
+      </TouchableOpacity>
+    );
+  }
+
+  // Tonal — soft violet fill
+  if (variant === 'tonal') {
+    return (
+      <TouchableOpacity
+        onPress={onPress}
+        disabled={isOff}
+        activeOpacity={0.7}
+        style={[base, styles.tonal, isOff && styles.off, style]}
+      >
+        {loading
+          ? <ActivityIndicator color={colors.primary} size="small" />
+          : <Content {...{ icon, iconRight, iconSize: s.icon }} iconColor={colors.primaryText} textStyle={[label, { color: colors.primaryText }]} title={title} />}
       </TouchableOpacity>
     );
   }
@@ -142,15 +169,17 @@ export default function GradientButton({
       activeOpacity={0.88}
       style={[full && { alignSelf: 'stretch' }, !isOff && shadow.brand, isOff && styles.off, style]}
     >
-      {/* The `action` size carries the design's CSS gradient, converted to
-          points for this button's real size; every other size keeps the
-          long-standing brand gradient. A call site can still override any
-          of it (gradientColors/Locations/Start/End). */}
+      {/* Every size carries the design's primary-button gradient (navy,
+          violet in the top-right corner), converted to points for this
+          button's real size. Staff screens used to get the older
+          violet→blue diagonal here, so the same "Save" looked different
+          depending on whose app it was in. A call site can still override
+          any of it (gradientColors/Locations/Start/End/Angle). */}
       <LinearGradient
-        colors={(gradientColors ?? (isAction ? colors.gradientButton : colors.gradient)) as any}
-        locations={(gradientLocations ?? (isAction ? colors.gradientButtonLocations : undefined)) as any}
-        start={gradientStart ?? (angled ? actionPoints.start : { x: 0, y: 0 })}
-        end={gradientEnd ?? (angled ? actionPoints.end : { x: 1, y: 1 })}
+        colors={(gradientColors ?? colors.gradientButton) as any}
+        locations={(gradientLocations ?? (gradientColors ? undefined : colors.gradientButtonLocations)) as any}
+        start={gradientStart ?? actionPoints.start}
+        end={gradientEnd ?? actionPoints.end}
         onLayout={onBoxLayout}
         style={base}
       >
@@ -170,5 +199,6 @@ const styles = StyleSheet.create({
     borderColor: colors.primary,
     backgroundColor: colors.bgCard,
   },
+  tonal: { backgroundColor: colors.primarySoft },
   off: { opacity: 0.45 },
 });

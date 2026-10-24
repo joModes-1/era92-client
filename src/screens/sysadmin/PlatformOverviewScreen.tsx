@@ -1,14 +1,15 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, RefreshControl, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, RefreshControl } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { api } from '../../api';
-import { colors, radii, font, spacing, weight, tracking, shadow } from '../../theme';
+import { colors, radii, font, spacing, weight } from '../../theme';
 import Icon from '../../components/Icon';
 import Badge from '../../components/Badge';
-import ScreenHeader from '../../components/ScreenHeader';
+import AppTopBar from '../../components/AppTopBar';
 import {
   Surface, SectionHeader, EmptyState, SkeletonList, TrendChart, RankedBars, ListRow,
+  HeroCard, NoticeRow, StatGrid, MonthBars, Hint,
 } from '../../components/ui';
 import type { RankedItem } from '../../components/ui';
 
@@ -31,6 +32,16 @@ function daysSince(iso: string | null) {
   return Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
 }
 
+/**
+ * The platform admin's front page, top to bottom by how often each part
+ * changes what they do next:
+ *
+ *  1. What the platform earns (MRR) and its paying / trial / overdue split.
+ *  2. Anything wanting a decision — billing to chase, problem reports.
+ *  3. Live activity across every tenant, and the two-week trend.
+ *  4. Which tenants carry the platform, and which have gone quiet.
+ *  5. Growth and overall size — the slow-moving context.
+ */
 export default function PlatformOverviewScreen() {
   const navigation = useNavigation<any>();
   const [stats, setStats] = useState<any>(null);
@@ -54,25 +65,27 @@ export default function PlatformOverviewScreen() {
     setRefreshing(false);
   };
 
+  const topBar = <AppTopBar context="Platform · all organisations" onMenu={() => navigation.openDrawer?.()} />;
+
   if (!loaded) {
     return (
-      <View style={styles.container}>
-        <ScreenHeader title="Platform Overview" subtitle="System-wide" />
+      <SafeAreaView style={styles.container} edges={['top']}>
+        {topBar}
         <ScrollView contentContainerStyle={styles.body}><SkeletonList rows={5} /></ScrollView>
-      </View>
+      </SafeAreaView>
     );
   }
 
   if (!stats) {
     return (
-      <View style={styles.container}>
-        <ScreenHeader title="Platform Overview" subtitle="System-wide" />
+      <SafeAreaView style={styles.container} edges={['top']}>
+        {topBar}
         <ScrollView contentContainerStyle={styles.body}>
           <Surface elevation="sm" padded="lg">
             <EmptyState icon="chart-pie" title="No platform data" message="Statistics appear once organisations are active." />
           </Surface>
         </ScrollView>
-      </View>
+      </SafeAreaView>
     );
   }
 
@@ -103,11 +116,10 @@ export default function PlatformOverviewScreen() {
   const openIssues = Number(stats.open_issues || 0);
   const cashOut = Number(stats.cash_with_workers || 0);
   const onboarding = billing?.onboarding || [];
-  const maxOnboard = Math.max(...onboarding.map((o: any) => Number(o.onboarded || 0)), 1);
 
   return (
-    <View style={styles.container}>
-      <ScreenHeader title="Platform Overview" subtitle="System-wide" />
+    <SafeAreaView style={styles.container} edges={['top']}>
+      {topBar}
 
       <ScrollView
         style={styles.scroll}
@@ -115,88 +127,59 @@ export default function PlatformOverviewScreen() {
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} />}
       >
-        {/* ── What the platform itself earns ─────────────────── */}
-        <LinearGradient
-          colors={[colors.ink[800], colors.ink[950]]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.hero}
-        >
-          <View style={styles.bloom} pointerEvents="none" />
-          <View style={styles.heroHead}>
-            <Text style={styles.heroKicker}>YOUR MONTHLY RECURRING REVENUE</Text>
-            <Icon name="chart-line" size={14} color="rgba(255,255,255,0.6)" />
-          </View>
-          <View style={styles.amountRow}>
-            <Text style={styles.currency}>UGX</Text>
-            <Text style={styles.amount} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.5}>
-              {ugx(bs.mrr_ugx)}
-            </Text>
-          </View>
-          <View style={styles.heroStats}>
-            <HeroStat label="Paying" value={String(bs.paying_orgs ?? 0)} />
-            <View style={styles.heroDivide} />
-            <HeroStat label="On trial" value={String(bs.trial_orgs ?? 0)} />
-            <View style={styles.heroDivide} />
-            <HeroStat label="Overdue" value={String(bs.past_due_orgs ?? 0)} alert={Number(bs.past_due_orgs) > 0} />
-          </View>
-        </LinearGradient>
+        {/* ── 1. What the platform itself earns ── */}
+        <HeroCard
+          label="Monthly recurring revenue"
+          prefix="UGX"
+          value={ugx(bs.mrr_ugx)}
+          stats={[
+            { label: 'Paying', value: String(bs.paying_orgs ?? 0) },
+            { label: 'On trial', value: String(bs.trial_orgs ?? 0) },
+            { label: 'Overdue', value: String(bs.past_due_orgs ?? 0), alert: Number(bs.past_due_orgs) > 0 },
+          ]}
+        />
 
-        {/* ── Anything wanting a decision, before the numbers ── */}
+        {/* ── 2. Anything wanting a decision, before the numbers ── */}
         {(attention.length > 0 || openIssues > 0) && (
           <View>
-            <SectionHeader title="Needs you" icon="bell" />
+            <SectionHeader title="Needs you" />
             <View style={{ gap: spacing.sm }}>
               {attention.length > 0 && (
-                <Surface
-                  elevation="sm"
-                  tone={colors.errorSoft}
-                  borderless
+                <NoticeRow
+                  tone="error"
+                  icon="file-invoice-dollar"
+                  title={`${attention.length} organisation${attention.length === 1 ? '' : 's'} to chase`}
+                  subtitle="Overdue, or due within 7 days"
                   onPress={() => navigation.navigate('Billing')}
-                  style={styles.alertRow}
-                >
-                  <Icon name="exclamation-triangle" size={13} color={colors.error} />
-                  <Text style={styles.alertText}>
-                    {attention.length} organisation{attention.length === 1 ? '' : 's'} overdue or due within 7 days
-                  </Text>
-                  <Icon name="chevron-right" size={11} color={colors.error} />
-                </Surface>
+                />
               )}
               {openIssues > 0 && (
-                <Surface
-                  elevation="sm"
-                  tone={colors.warningSoft}
-                  borderless
+                <NoticeRow
+                  tone="warning"
+                  icon="life-ring"
+                  title={`${openIssues} open problem report${openIssues === 1 ? '' : 's'}`}
+                  subtitle="Reported from inside the app"
                   onPress={() => navigation.navigate('Report a problem')}
-                  style={styles.alertRow}
-                >
-                  <Icon name="life-ring" size={13} color={colors.warning} />
-                  <Text style={[styles.alertText, { color: colors.warning }]}>
-                    {openIssues} open problem report{openIssues === 1 ? '' : 's'}
-                  </Text>
-                  <Icon name="chevron-right" size={11} color={colors.warning} />
-                </Surface>
+                />
               )}
             </View>
           </View>
         )}
 
-        {/* ── Live activity across every tenant ──────────────── */}
+        {/* ── 3. Live activity across every tenant ── */}
         <View>
-          <SectionHeader title="Today, everywhere" icon="bolt" />
-          <Surface elevation="sm" padded="lg">
-            <View style={styles.statGrid}>
-              <Stat label="Washes today" value={String(stats.washes_today ?? 0)} />
-              <Stat label="Taken today" value={compact(Number(stats.gross_today || 0))} />
-              <Stat
-                label="Cars open now"
-                value={String(stats.open_jobs ?? 0)}
-                tone={Number(stats.open_jobs) > 0 ? colors.info : undefined}
-              />
-            </View>
+          <SectionHeader title="Today, everywhere" />
+          <Surface elevation="sm" padded="lg" style={{ gap: spacing.md }}>
+            <StatGrid
+              items={[
+                { label: 'Washes today', value: String(stats.washes_today ?? 0) },
+                { label: 'Taken (UGX)', value: compact(Number(stats.gross_today || 0)) },
+                { label: 'Cars open now', value: String(stats.open_jobs ?? 0), tone: Number(stats.open_jobs) > 0 ? 'info' : undefined },
+              ]}
+            />
             {cashOut > 0 && (
               <View style={styles.cashNote}>
-                <Icon name="wallet" size={11} color={colors.warning} />
+                <Icon name="wallet" size={12} color={colors.warning} />
                 <Text style={styles.cashNoteText}>
                   UGX {ugx(cashOut)} is with workers across all branches, not yet handed in.
                 </Text>
@@ -205,9 +188,8 @@ export default function PlatformOverviewScreen() {
           </Surface>
         </View>
 
-        {/* ── Direction of travel ────────────────────────────── */}
         <View>
-          <SectionHeader title="Last 14 days" icon="chart-line" />
+          <SectionHeader title="Last 14 days" />
           <Surface elevation="sm" padded="lg">
             <TrendChart
               points={trendPoints}
@@ -217,34 +199,30 @@ export default function PlatformOverviewScreen() {
           </Surface>
         </View>
 
-        {/* ── Month so far ───────────────────────────────────── */}
-        <Surface elevation="sm" padded="lg" style={{ gap: spacing.md }}>
-          <View style={styles.monthHead}>
-            <Text style={styles.sectionLabel}>THIS MONTH, ALL ORGANISATIONS</Text>
-            {delta !== null && (
-              <View style={styles.deltaPill}>
-                <Icon name={delta >= 0 ? 'arrow-up' : 'arrow-down'} size={8} color={delta >= 0 ? colors.success : colors.error} />
-                <Text style={[styles.deltaText, { color: delta >= 0 ? colors.success : colors.error }]}>
-                  {Math.abs(delta)}%
-                </Text>
-              </View>
-            )}
-          </View>
-          <View style={styles.statGrid}>
-            <Stat label="Washes" value={String(stats.washes_this_month ?? 0)} />
-            <Stat label="Gross UGX" value={compact(grossMonth)} />
-            <Stat label="Last month" value={compact(grossLast)} muted />
-          </View>
-          {delta !== null && (
-            <Text style={styles.deltaNote}>
-              Compared with the same {dayOfMonth} day{dayOfMonth === 1 ? '' : 's'} of last month.
-            </Text>
-          )}
-        </Surface>
-
-        {/* ── Who is carrying the platform ───────────────────── */}
         <View>
-          <SectionHeader title="Busiest organisations" count={orgItems.length} icon="building" />
+          <SectionHeader
+            title="This month"
+            action={delta !== null ? `${delta >= 0 ? '▲' : '▼'} ${Math.abs(delta)}% vs last month` : undefined}
+          />
+          <Surface elevation="sm" padded="lg" style={{ gap: spacing.md }}>
+            <StatGrid
+              items={[
+                { label: 'Washes', value: String(stats.washes_this_month ?? 0) },
+                { label: 'Gross (UGX)', value: compact(grossMonth) },
+                { label: 'Last month', value: compact(grossLast), muted: true },
+              ]}
+            />
+            {delta !== null && (
+              <Text style={styles.deltaNote}>
+                Compared with the same {dayOfMonth} day{dayOfMonth === 1 ? '' : 's'} of last month, across all organisations.
+              </Text>
+            )}
+          </Surface>
+        </View>
+
+        {/* ── 4. Who is carrying the platform ── */}
+        <View>
+          <SectionHeader title="Busiest organisations" count={orgItems.length} />
           {orgItems.length === 0 ? (
             <Surface elevation="sm" padded="lg">
               <EmptyState icon="building" title="No organisations yet" message="Onboard your first tenant to see activity here." />
@@ -260,169 +238,88 @@ export default function PlatformOverviewScreen() {
           )}
         </View>
 
-        {/* ── Churn signal ───────────────────────────────────── */}
+        {/* ── Churn signal ── */}
         {quiet.length > 0 && (
-          <View>
-            <SectionHeader title="Gone quiet" count={quiet.length} icon="moon" />
-            <Surface elevation="sm" padded="sm">
-              {quiet.map((o: any, i: number) => {
-                const d = daysSince(o.last_activity_at);
-                return (
-                  <ListRow
-                    key={o.id}
-                    onPress={() => navigation.navigate('Org Detail', { orgId: o.id })}
-                    leading="moon"
-                    leadingTone="warning"
-                    title={o.name}
-                    subtitle={d == null ? 'Never processed a wash' : `Last wash ${d} days ago`}
-                    last={i === quiet.length - 1}
-                  />
-                );
-              })}
-            </Surface>
-            <View style={styles.hint}>
-              <Icon name="info-circle" size={11} color={colors.textMuted} />
-              <Text style={styles.hintText}>
-                Active organisations with no washes in the last 7 days — usually the first sign of churn.
-              </Text>
+          <View style={{ gap: spacing.sm }}>
+            <View>
+              <SectionHeader title="Gone quiet" count={quiet.length} />
+              <Surface elevation="sm" padded="sm" style={styles.listCard}>
+                {quiet.map((o: any, i: number) => {
+                  const d = daysSince(o.last_activity_at);
+                  return (
+                    <ListRow
+                      key={o.id}
+                      onPress={() => navigation.navigate('Org Detail', { orgId: o.id })}
+                      leading="moon"
+                      leadingTone="warning"
+                      title={o.name}
+                      subtitle={d == null ? 'Never processed a wash' : `Last wash ${d} days ago`}
+                      last={i === quiet.length - 1}
+                    />
+                  );
+                })}
+              </Surface>
             </View>
+            <Hint>Active organisations with no washes in the last 7 days — usually the first sign of churn.</Hint>
           </View>
         )}
 
-        {/* ── Growth ─────────────────────────────────────────── */}
+        {/* ── 5. Growth ── */}
         {onboarding.length > 0 && (
           <View>
-            <SectionHeader title="New organisations" icon="chart-bar" />
+            <SectionHeader title="New organisations" />
             <Surface elevation="sm" padded="lg">
               {onboarding.every((o: any) => Number(o.onboarded || 0) === 0) ? (
                 <EmptyState icon="chart-bar" title="No sign-ups in six months" message="New tenants chart here as you onboard them." />
               ) : (
-                <View style={styles.months}>
-                  {onboarding.map((o: any, i: number) => {
-                    const c = Number(o.onboarded || 0);
-                    const h = Math.max(3, (c / maxOnboard) * 60);
-                    const isLast = i === onboarding.length - 1;
-                    return (
-                      <View key={o.month} style={styles.monthCol}>
-                        <Text style={styles.monthValue}>{c}</Text>
-                        <View
-                          style={[
-                            styles.monthBar,
-                            { height: h, backgroundColor: isLast ? colors.primary : colors.primaryTint },
-                          ]}
-                        />
-                        <Text style={[styles.monthLabel, isLast && styles.monthLabelOn]}>{monthLabel(o.month)}</Text>
-                      </View>
-                    );
-                  })}
-                </View>
+                <MonthBars
+                  height={60}
+                  items={onboarding.map((o: any) => ({
+                    key: o.month,
+                    label: monthLabel(o.month),
+                    value: Number(o.onboarded || 0),
+                  }))}
+                />
               )}
             </Surface>
           </View>
         )}
 
-        {/* ── Scale of the whole thing ───────────────────────── */}
-        <Surface elevation="sm" padded="lg" style={{ gap: spacing.md }}>
-          <Text style={styles.sectionLabel}>PLATFORM SIZE</Text>
-          <View style={styles.statGrid}>
-            <Stat label="Organisations" value={String(stats.total_orgs ?? 0)} />
-            <Stat label="Branches" value={String(stats.active_branches ?? 0)} />
-            <Stat label="Staff" value={String(stats.active_staff ?? 0)} />
-            <Stat label="Customers" value={String(stats.total_clients ?? 0)} />
-          </View>
-          {Number(stats.suspended_orgs) > 0 && (
-            <View style={styles.suspendNote}>
+        {/* ── Scale of the whole thing ── */}
+        <View>
+          <SectionHeader title="Platform size" />
+          <Surface elevation="sm" padded="lg" style={{ gap: spacing.md }}>
+            <StatGrid
+              items={[
+                { label: 'Orgs', value: String(stats.total_orgs ?? 0) },
+                { label: 'Branches', value: String(stats.active_branches ?? 0) },
+                { label: 'Staff', value: String(stats.active_staff ?? 0) },
+                { label: 'Customers', value: String(stats.total_clients ?? 0) },
+              ]}
+            />
+            {Number(stats.suspended_orgs) > 0 && (
               <Badge label={`${stats.suspended_orgs} suspended`} tone="error" small />
-            </View>
-          )}
-        </Surface>
+            )}
+          </Surface>
+        </View>
       </ScrollView>
-    </View>
-  );
-}
-
-function Stat({ label, value, tone, muted }: { label: string; value: string; tone?: string; muted?: boolean }) {
-  return (
-    <View style={styles.stat}>
-      <Text
-        style={[styles.statValue, tone ? { color: tone } : null, muted && styles.statMuted]}
-        numberOfLines={1}
-        adjustsFontSizeToFit
-        minimumFontScale={0.7}
-      >
-        {value}
-      </Text>
-      <Text style={styles.statLabel} numberOfLines={1}>{label}</Text>
-    </View>
-  );
-}
-
-function HeroStat({ label, value, alert }: { label: string; value: string; alert?: boolean }) {
-  return (
-    <View style={styles.heroStat}>
-      <Text style={[styles.heroStatValue, alert && { color: '#FF8A9B' }]} numberOfLines={1}>{value}</Text>
-      <Text style={styles.heroStatLabel} numberOfLines={1}>{label}</Text>
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   scroll: { flex: 1 },
-  body: { padding: spacing.lg, paddingBottom: spacing.xxxl, gap: spacing.lg },
+  body: { padding: spacing.lg, paddingBottom: spacing.xxxl, gap: spacing.xl },
 
-  hero: { borderRadius: radii.xl, padding: spacing.xl, overflow: 'hidden', ...shadow.md },
-  bloom: {
-    position: 'absolute', top: -80, right: -50,
-    width: 200, height: 200, borderRadius: 100,
-    backgroundColor: colors.bloomBrandSoft,
-  },
-  heroHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.sm },
-  heroKicker: { fontSize: font.micro, fontWeight: weight.heavy, color: 'rgba(255,255,255,0.55)', letterSpacing: tracking.capsWide },
-  amountRow: { flexDirection: 'row', alignItems: 'baseline', gap: 6 },
-  currency: { fontSize: font.regular, fontWeight: weight.heavy, color: 'rgba(255,255,255,0.55)' },
-  amount: { flexShrink: 1, fontSize: font.hero, fontWeight: weight.black, color: '#fff', letterSpacing: tracking.display },
-  heroStats: {
-    flexDirection: 'row', alignItems: 'center',
-    marginTop: spacing.lg, paddingTop: spacing.md,
-    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: 'rgba(255,255,255,0.14)',
-  },
-  heroStat: { flex: 1, gap: 1 },
-  heroStatValue: { fontSize: font.regular, fontWeight: weight.black, color: '#fff' },
-  heroStatLabel: { fontSize: font.micro, color: 'rgba(255,255,255,0.6)' },
-  heroDivide: { width: StyleSheet.hairlineWidth, height: 24, backgroundColor: 'rgba(255,255,255,0.18)' },
-
-  alertRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  alertText: { flex: 1, fontSize: font.sm, fontWeight: weight.heavy, color: colors.error },
-
-  sectionLabel: { fontSize: font.micro, fontWeight: weight.heavy, color: colors.textMuted, letterSpacing: tracking.capsWide },
-  statGrid: { flexDirection: 'row', gap: spacing.md },
-  stat: { flex: 1, gap: 1 },
-  statValue: { fontSize: font.xl, fontWeight: weight.black, color: colors.text, letterSpacing: tracking.tight },
-  statMuted: { color: colors.textMuted },
-  statLabel: { fontSize: font.micro, color: colors.textMuted, fontWeight: weight.semibold },
+  listCard: { paddingHorizontal: spacing.md },
 
   cashNote: {
-    flexDirection: 'row', alignItems: 'flex-start', gap: 7,
+    flexDirection: 'row', alignItems: 'flex-start', gap: 8,
     backgroundColor: colors.warningSoft, borderRadius: radii.sm,
-    paddingVertical: 9, paddingHorizontal: spacing.md, marginTop: spacing.md,
+    paddingVertical: 10, paddingHorizontal: spacing.md,
   },
-  cashNoteText: { flex: 1, fontSize: font.xs, color: colors.warning, fontWeight: weight.semibold, lineHeight: 16 },
+  cashNoteText: { flex: 1, fontSize: font.sm, color: colors.warningText, fontWeight: weight.semibold, lineHeight: 18 },
 
-  monthHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  deltaPill: { flexDirection: 'row', alignItems: 'center', gap: 3 },
-  deltaText: { fontSize: font.xs, fontWeight: weight.black },
-  deltaNote: { fontSize: font.micro, color: colors.textMuted },
-
-  months: { flexDirection: 'row', alignItems: 'flex-end', gap: spacing.sm, minHeight: 96 },
-  monthCol: { flex: 1, alignItems: 'center', gap: 3 },
-  monthValue: { fontSize: font.micro, fontWeight: weight.heavy, color: colors.textSecondary },
-  monthBar: { width: '100%', borderTopLeftRadius: 4, borderTopRightRadius: 4 },
-  monthLabel: { fontSize: font.micro, color: colors.textMuted, fontWeight: weight.semibold },
-  monthLabelOn: { color: colors.primary, fontWeight: weight.heavy },
-
-  suspendNote: { flexDirection: 'row' },
-
-  hint: { flexDirection: 'row', alignItems: 'flex-start', gap: 7, paddingHorizontal: spacing.xs, marginTop: spacing.sm },
-  hintText: { flex: 1, fontSize: font.xs, color: colors.textMuted, lineHeight: 17 },
+  deltaNote: { fontSize: font.xs, color: colors.textMuted, lineHeight: 16 },
 });

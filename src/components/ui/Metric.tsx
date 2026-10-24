@@ -1,13 +1,15 @@
 import React from 'react';
 import { View, Text, StyleSheet, ViewStyle } from 'react-native';
-import { colors, font, spacing, radii, tracking, weight, Tone, tone as toneMap } from '../../theme';
+import { colors, font, spacing, radii, tracking, weight, Tone, tone as toneMap, staffType, staffText } from '../../theme';
 import Icon from '../Icon';
+import { useIsStaff } from './useIsStaff';
 
 /**
  * MetricStrip — replaces the grid of bordered stat boxes. Values sit on one
  * baseline separated by hairline dividers, so the eye reads numbers, not boxes.
  */
 export function MetricStrip({ items, style }: { items: MetricItem[]; style?: ViewStyle }) {
+  const staff = useIsStaff();
   return (
     <View style={[styles.strip, style]}>
       {items.map((it, i) => (
@@ -15,14 +17,14 @@ export function MetricStrip({ items, style }: { items: MetricItem[]; style?: Vie
           {i > 0 && <View style={styles.divider} />}
           <View style={styles.stripCell}>
             <Text
-              style={[styles.stripValue, it.tone ? { color: toneMap[it.tone].fg } : null]}
+              style={[styles.stripValue, staff && styles.stripValueStaff, it.tone ? { color: toneMap[it.tone].text } : null]}
               numberOfLines={1}
               adjustsFontSizeToFit
               minimumFontScale={0.7}
             >
               {it.value}
             </Text>
-            <Text style={styles.stripLabel} numberOfLines={1}>{it.label.toUpperCase()}</Text>
+            <Text style={[styles.stripLabel, staff && styles.stripLabelStaff]} numberOfLines={1}>{it.label}</Text>
           </View>
         </React.Fragment>
       ))}
@@ -52,16 +54,17 @@ export function HeroMetric({
   align?: 'left' | 'center';
 }) {
   const c = toneMap[t];
+  const staff = useIsStaff();
   return (
     <View style={[styles.hero, align === 'center' && { alignItems: 'center' }]}>
       <View style={styles.heroLabelRow}>
         {icon ? <Icon name={icon} size={11} color={colors.textMuted} /> : null}
-        <Text style={styles.heroLabel}>{label.toUpperCase()}</Text>
+        <Text style={[styles.heroLabel, staff && styles.heroLabelStaff]}>{label}</Text>
       </View>
-      <Text style={[styles.heroValue, { color: c.fg }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}>
+      <Text style={[styles.heroValue, staff && styles.heroValueStaff, { color: c.text }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}>
         {value}
       </Text>
-      {sublabel ? <Text style={styles.heroSub}>{sublabel}</Text> : null}
+      {sublabel ? <Text style={[styles.heroSub, staff && styles.heroSubStaff]}>{sublabel}</Text> : null}
     </View>
   );
 }
@@ -72,14 +75,16 @@ export function HeroMetric({
 export function DataPoint({
   label, value, tone: t, emphasis,
 }: { label: string; value: string | number; tone?: Tone; emphasis?: boolean }) {
+  const staff = useIsStaff();
   return (
     <View style={styles.dp}>
-      <Text style={styles.dpLabel}>{label}</Text>
+      <Text style={[styles.dpLabel, staff && styles.dpLabelStaff]}>{label}</Text>
       <Text
         style={[
           styles.dpValue,
-          emphasis && styles.dpValueEmphasis,
-          t ? { color: toneMap[t].fg } : null,
+          staff && styles.dpValueStaff,
+          emphasis && (staff ? styles.dpValueEmphasisStaff : styles.dpValueEmphasis),
+          t ? { color: toneMap[t].text } : null,
         ]}
       >
         {value}
@@ -96,6 +101,7 @@ export function StatTile({
   label, value, icon, tone: t = 'neutral', style,
 }: { label: string; value: string | number; icon?: string; tone?: Tone; style?: ViewStyle }) {
   const c = toneMap[t];
+  const staff = useIsStaff();
   return (
     <View style={[styles.tile, { backgroundColor: c.bg }, style]}>
       {icon ? (
@@ -103,10 +109,10 @@ export function StatTile({
           <Icon name={icon} size={12} color={c.fg} />
         </View>
       ) : null}
-      <Text style={[styles.tileValue, { color: c.fg }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.65}>
+      <Text style={[styles.tileValue, staff && styles.tileValueStaff, { color: c.text }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.65}>
         {value}
       </Text>
-      <Text style={styles.tileLabel} numberOfLines={2}>{label}</Text>
+      <Text style={[styles.tileLabel, staff && styles.tileLabelStaff]} numberOfLines={2}>{label}</Text>
     </View>
   );
 }
@@ -133,19 +139,17 @@ const styles = StyleSheet.create({
     letterSpacing: tracking.tight,
   },
   stripLabel: {
-    fontSize: font.micro,
-    fontWeight: weight.bold,
+    fontSize: font.xs,
+    fontWeight: weight.semibold,
     color: colors.textMuted,
-    letterSpacing: tracking.caps,
   },
 
   hero: { gap: 4 },
   heroLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   heroLabel: {
-    fontSize: font.xs,
-    fontWeight: weight.bold,
+    fontSize: font.sm,
+    fontWeight: weight.semibold,
     color: colors.textMuted,
-    letterSpacing: tracking.capsWide,
   },
   heroValue: {
     fontSize: font.hero,
@@ -172,4 +176,16 @@ const styles = StyleSheet.create({
   },
   tileValue: { fontSize: font.xl, fontWeight: weight.heavy, letterSpacing: tracking.tight },
   tileLabel: { fontSize: font.xs, color: colors.textSecondary, fontWeight: weight.medium },
+
+  // Staff variants (STAFF-UI-SPEC.md): weights ≤700, tabular figures, readable greys.
+  stripValueStaff: { fontSize: 20, lineHeight: 26, fontWeight: weight.bold, letterSpacing: 0, ...staffType.tabular },
+  stripLabelStaff: { ...staffType.meta },
+  heroLabelStaff: { ...staffType.caption, color: staffText.secondary },
+  heroValueStaff: { ...staffType.hero, letterSpacing: 0 },
+  heroSubStaff: { ...staffType.meta, color: staffText.secondary },
+  dpLabelStaff: { ...staffType.secondary },
+  dpValueStaff: { ...staffType.label, ...staffType.tabular },
+  dpValueEmphasisStaff: { fontSize: 17, lineHeight: 22, fontWeight: weight.bold },
+  tileValueStaff: { fontSize: 20, lineHeight: 26, fontWeight: weight.bold, letterSpacing: 0, ...staffType.tabular },
+  tileLabelStaff: { ...staffType.meta, color: staffText.secondary },
 });

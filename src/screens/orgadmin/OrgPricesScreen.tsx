@@ -2,11 +2,11 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl } from 'react-native';
 import { api } from '../../api';
 import { useAuth } from '../../api/AuthContext';
-import { colors, radii, font, spacing, weight, tracking } from '../../theme';
+import { colors, radii, font, spacing, weight, tracking, orgBg } from '../../theme';
 import Icon from '../../components/Icon';
 import ScreenHeader, { HeaderAction } from '../../components/ScreenHeader';
 import { useAppAlert } from '../../components/AppAlert';
-import { Surface, SectionHeader, EmptyState, SkeletonList, Field, FormSheet } from '../../components/ui';
+import { Surface, SectionHeader, EmptyState, SkeletonList, Field, FormSheet, NoticeRow, Hint } from '../../components/ui';
 
 // The grid is sized to the screen rather than to fixed columns. Five car
 // types at 96px plus a 116px label ran to ~600px on a ~360px phone, so the
@@ -248,7 +248,7 @@ export default function OrgPricesScreen() {
 
   if (!loaded) {
     return (
-      <View style={styles.container}>
+      <View style={[styles.container, orgBg()]}>
         <ScreenHeader title="Prices" />
         <ScrollView contentContainerStyle={styles.body}><SkeletonList rows={5} /></ScrollView>
       </View>
@@ -270,7 +270,7 @@ export default function OrgPricesScreen() {
   const empty = services.length === 0 || vehicleClasses.length === 0;
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, orgBg()]}>
       <ScreenHeader
         title="Prices"
         subtitle={
@@ -304,12 +304,9 @@ export default function OrgPricesScreen() {
         </View>
 
         {isManager && (
-          <View style={styles.explain}>
-            <Icon name="info-circle" size={11} color={colors.textMuted} />
-            <Text style={styles.explainText}>
-              Anything you add here belongs to {branchName || 'your branch'} only. Shared org-wide types can be re-priced for your branch but not renamed.
-            </Text>
-          </View>
+          <Hint>
+            Anything you add here belongs to {branchName || 'your branch'} only. Shared org-wide types can be re-priced for your branch but not renamed.
+          </Hint>
         )}
 
         {empty ? (
@@ -336,29 +333,20 @@ export default function OrgPricesScreen() {
           </Surface>
         ) : (
           <>
-            {/* Coverage banner */}
-            <Surface
-              elevation="sm"
-              tone={missing.length > 0 ? colors.warningSoft : colors.successSoft}
-              borderless
-              style={styles.banner}
-            >
-              <Icon
-                name={missing.length > 0 ? 'exclamation-triangle' : 'check-circle'}
-                size={13}
-                color={missing.length > 0 ? colors.warning : colors.success}
-              />
-              <Text style={[styles.bannerText, { color: missing.length > 0 ? colors.warning : colors.success }]}>
-                {missing.length > 0
-                  ? isManager
-                    ? `${missing.length} of ${totalCells} combinations have no org price yet`
-                    : `${missing.length} of ${totalCells} combinations still need a price`
-                  : `All ${totalCells} combinations priced`}
-              </Text>
-              <Text style={styles.bannerCount}>{filled}/{totalCells}</Text>
-            </Surface>
+            {/* Coverage — how much of the grid is priced */}
+            <NoticeRow
+              tone={missing.length > 0 ? 'warning' : 'success'}
+              icon={missing.length > 0 ? 'exclamation-triangle' : 'check'}
+              title={missing.length > 0
+                ? isManager
+                  ? `${missing.length} of ${totalCells} combinations have no org price yet`
+                  : `${missing.length} of ${totalCells} combinations still need a price`
+                : `All ${totalCells} combinations priced`}
+              subtitle={missing.length > 0 ? 'Empty cells are marked with + in the grid below.' : undefined}
+              trailing={<Text style={styles.bannerCount}>{filled}/{totalCells}</Text>}
+            />
 
-            <SectionHeader title="Price matrix" icon="table" />
+            <SectionHeader title="Price matrix" />
 
             {/* Matrix — horizontal scroll with a pinned service column */}
             {/* The measuring View sits inside the card so the width it
@@ -434,7 +422,7 @@ export default function OrgPricesScreen() {
                     onPress={() => openAdd('service')}
                     activeOpacity={0.6}
                   >
-                    <View style={[styles.addRowInner, { width: labelW }]}>
+                    <View style={styles.addRowInner}>
                       <Icon name="plus" size={10} color={colors.primary} />
                       <Text style={styles.addRowText}>Wash type</Text>
                     </View>
@@ -444,14 +432,11 @@ export default function OrgPricesScreen() {
               </View>
             </Surface>
 
-            <View style={styles.hint}>
-              <Icon name="info-circle" size={11} color={colors.textMuted} />
-              <Text style={styles.hintText}>
-                {isManager
-                  ? 'A dot marks a price set for your branch. Cells without one use the org default. Types you add are private to your branch.'
-                  : 'Prices in thousands — tap any cell for the exact figure. Branch managers can override the org price for their own branch.'}
-              </Text>
-            </View>
+            <Hint>
+              {isManager
+                ? 'A dot marks a price set for your branch. Cells without one use the org default. Types you add are private to your branch.'
+                : 'Prices in thousands — tap any cell for the exact figure. Branch managers can override the org price for their own branch.'}
+            </Hint>
           </>
         )}
       </ScrollView>
@@ -558,14 +543,9 @@ const styles = StyleSheet.create({
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7,
     minHeight: 44, borderRadius: radii.md, backgroundColor: colors.primarySoft,
   },
-  addBtnText: { fontSize: font.sm, fontWeight: weight.heavy, color: colors.primary },
+  addBtnText: { fontSize: font.sm, fontWeight: weight.heavy, color: colors.primaryText },
 
-  explain: { flexDirection: 'row', alignItems: 'flex-start', gap: 7, paddingHorizontal: spacing.xs },
-  explainText: { flex: 1, fontSize: font.xs, color: colors.textMuted, lineHeight: 17 },
-
-  banner: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  bannerText: { flex: 1, fontSize: font.sm, fontWeight: weight.bold },
-  bannerCount: { fontSize: font.sm, fontWeight: weight.black, color: colors.textSecondary },
+  bannerCount: { fontSize: font.regular, fontWeight: weight.black, color: colors.textSecondary },
 
   matrixCard: { overflow: 'hidden' },
   row: { flexDirection: 'row' },
@@ -575,13 +555,13 @@ const styles = StyleSheet.create({
     height: 40, justifyContent: 'center', paddingHorizontal: spacing.sm,
     backgroundColor: colors.bgSunken,
   },
-  cornerText: { fontSize: font.micro, fontWeight: weight.heavy, color: colors.textMuted, letterSpacing: tracking.caps },
+  cornerText: { fontSize: font.xs, fontWeight: weight.heavy, color: colors.textMuted },
   headCell: {
     height: 40, alignItems: 'center', justifyContent: 'center',
     paddingHorizontal: 3, backgroundColor: colors.bgSunken,
     borderLeftWidth: StyleSheet.hairlineWidth, borderLeftColor: colors.border,
   },
-  headText: { fontSize: font.micro, fontWeight: weight.heavy, color: colors.text, textAlign: 'center' },
+  headText: { fontSize: font.xs, fontWeight: weight.heavy, color: colors.text, textAlign: 'center' },
   addCell: {
     height: 42, alignItems: 'center', justifyContent: 'center',
     backgroundColor: colors.primarySoft,
@@ -589,7 +569,7 @@ const styles = StyleSheet.create({
   },
 
   labelCell: { minHeight: 48, justifyContent: 'center', paddingHorizontal: spacing.sm, backgroundColor: colors.bgCard },
-  labelText: { fontSize: font.xs, fontWeight: weight.bold, color: colors.text },
+  labelText: { fontSize: font.sm, fontWeight: weight.bold, color: colors.text },
 
   gridFit: { width: '100%' },
   cell: {
@@ -599,7 +579,7 @@ const styles = StyleSheet.create({
   },
   cellEmpty: { backgroundColor: colors.warningSoft },
   cellValueWrap: { alignItems: 'center', gap: 2 },
-  cellText: { fontSize: font.xs, fontWeight: weight.heavy, color: colors.text, letterSpacing: tracking.tight },
+  cellText: { fontSize: font.sm, fontWeight: weight.heavy, color: colors.text, letterSpacing: tracking.tight },
   overrideDot: { width: 4, height: 4, borderRadius: 2, backgroundColor: colors.primary },
   setWrap: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   setText: { fontSize: font.micro, fontWeight: weight.bold, color: colors.warning },
@@ -609,8 +589,5 @@ const styles = StyleSheet.create({
     minHeight: 40, flexDirection: 'row', alignItems: 'center', gap: 6,
     paddingHorizontal: spacing.md,
   },
-  addRowText: { fontSize: font.xs, fontWeight: weight.heavy, color: colors.primary },
-
-  hint: { flexDirection: 'row', alignItems: 'flex-start', gap: 7, paddingHorizontal: spacing.xs },
-  hintText: { flex: 1, fontSize: font.xs, color: colors.textMuted, lineHeight: 17 },
+  addRowText: { fontSize: font.sm, fontWeight: weight.heavy, color: colors.primaryText },
 });

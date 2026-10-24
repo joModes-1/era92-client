@@ -1,31 +1,42 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { api } from '../../api';
-import { colors, radii, font, spacing, weight, tracking, Tone } from '../../theme';
+import { colors, font, spacing, weight } from '../../theme';
 import { ReportScreen } from '../manager/reportHelpers';
-import Icon from '../../components/Icon';
-import { Surface, SectionHeader, EmptyState, ListRow, MetricStrip } from '../../components/ui';
+import { Surface, MetricStrip, SectionHeader } from '../../components/ui';
+import { PointsBalanceCard, PointsRows, PointsEntry } from '../client/PointsSheet';
 
 /**
- * My Points — the worker's experience points (server: modules/workerPoints).
+ * My Points — the worker's experience points (server: modules/workerPoints),
+ * shown with the same card and rows as the client's Points page so points
+ * look the same wherever they appear in the app: the balance on the
+ * pink-to-peach card beside the award badge, earned/used figures, then each
+ * movement as a row with the wash's picture.
+ *
  * Earned on every car they wash, at the number the owner set for that wash
  * type in Points Settings. They rank the leaderboard and decide who the
  * dispatcher gives a car to first.
  */
 
-const KIND: Record<string, { label: string; icon: string; tone: Tone }> = {
-  earn: { label: 'Car washed', icon: 'car', tone: 'primary' },
-  bonus: { label: 'Bonus', icon: 'gift', tone: 'success' },
-  reversal: { label: 'Wash reversed', icon: 'undo', tone: 'error' },
-  manual_adjust: { label: 'Adjusted', icon: 'sliders-h', tone: 'neutral' },
-  redeem: { label: 'Redeemed', icon: 'award', tone: 'accent' },
+const ENTRY_LABEL: Record<string, string> = {
+  earn: 'Earned', bonus: 'Bonus', reversal: 'Taken back', manual_adjust: 'Adjusted', redeem: 'Used',
 };
 
-function when(iso?: string) {
-  if (!iso) return '';
-  const d = new Date(iso);
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) +
-    ' · ' + d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+/** "May 14 at 10:20 AM", as the client's rows read. */
+function dateLabel(iso?: string) {
+  const d = iso ? new Date(iso) : new Date();
+  const day = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  return `${day} at ${time}`;
+}
+
+function toEntries(history: any[]): PointsEntry[] {
+  return history.map((h: any, i: number) => ({
+    id: h.id || `${h.created_at}-${i}`,
+    title: h.service_name || (h.entry_type === 'earn' ? 'Car washed' : 'Points'),
+    subtitle: `${ENTRY_LABEL[h.entry_type] || 'Changed'}${h.job_no ? ` • ${h.job_no}` : ''} • ${dateLabel(h.created_at)}`,
+    points: Number(h.points_delta || 0),
+  }));
 }
 
 export default function PointsScreen() {
@@ -39,60 +50,29 @@ export default function PointsScreen() {
         const history: any[] = p.history || [];
         return (
           <View style={{ gap: spacing.lg }}>
-            <Surface elevation="sm" style={styles.card}>
-              <View style={styles.badge}><Icon name="award" size={20} color="#AC00FF" /></View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.kicker}>YOUR POINTS</Text>
-                <Text style={styles.value}>{Number(p.points_balance || 0).toLocaleString()}</Text>
-                {p.value_ugx != null ? (
-                  <Text style={styles.worth}>Worth UGX {Number(p.value_ugx).toLocaleString()}</Text>
-                ) : null}
-              </View>
-            </Surface>
+            <PointsBalanceCard
+              balance={Number(p.points_balance || 0)}
+              worthUgx={p.value_ugx != null ? Number(p.value_ugx) : undefined}
+            />
+
+            {!p.scheme_active ? (
+              <Text style={styles.note}>Points are paused at this car wash for now.</Text>
+            ) : null}
 
             <Surface elevation="sm">
               <MetricStrip
                 items={[
-                  { label: 'All time', value: Number(p.lifetime_earned || 0).toLocaleString(), tone: 'primary' },
+                  { label: 'Earned all time', value: Number(p.lifetime_earned || 0).toLocaleString(), tone: 'primary' },
                   { label: 'Cars counted', value: Number(p.washes_credited || 0).toLocaleString(), tone: 'accent' },
                 ]}
               />
             </Surface>
 
-            {!p.scheme_active ? (
-              <Text style={styles.paused}>Points are paused at this car wash for now.</Text>
-            ) : null}
-
             <View>
-              <SectionHeader title="History" count={history.length} icon="stream" />
-              {history.length === 0 ? (
-                <Surface elevation="sm" padded="lg">
-                  <EmptyState icon="award" title="No points yet" message="You earn points every time a car you washed is paid." />
-                </Surface>
-              ) : (
-                <Surface elevation="sm" padded="sm">
-                  {history.map((h: any, i: number) => {
-                    const m = KIND[h.entry_type] || { label: h.entry_type, icon: 'circle', tone: 'neutral' as Tone };
-                    const d = Number(h.points_delta || 0);
-                    return (
-                      <ListRow
-                        key={h.id}
-                        leading={m.icon}
-                        leadingTone={m.tone}
-                        title={m.label}
-                        subtitle={[h.job_no, h.reason].filter(Boolean).join(' · ') || undefined}
-                        meta={when(h.created_at)}
-                        last={i === history.length - 1}
-                        trailing={
-                          <Text style={[styles.delta, { color: d >= 0 ? colors.success : colors.error }]}>
-                            {d > 0 ? '+' : ''}{d.toLocaleString()}
-                          </Text>
-                        }
-                      />
-                    );
-                  })}
-                </Surface>
-              )}
+              <SectionHeader title="Points activity" />
+              <View style={{ gap: spacing.sm }}>
+                <PointsRows entries={toEntries(history)} />
+              </View>
             </View>
           </View>
         );
@@ -102,11 +82,5 @@ export default function PointsScreen() {
 }
 
 const styles = StyleSheet.create({
-  card: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  badge: { width: 48, height: 48, borderRadius: 16, backgroundColor: '#F4ECFF', alignItems: 'center', justifyContent: 'center' },
-  kicker: { fontSize: font.micro, fontWeight: weight.heavy, color: colors.textMuted, letterSpacing: tracking.capsWide },
-  value: { fontSize: font.xxl, fontWeight: weight.black, color: colors.text, letterSpacing: tracking.display },
-  worth: { fontSize: font.sm, color: colors.textSecondary, fontWeight: weight.semibold },
-  paused: { fontSize: font.sm, color: colors.warning, textAlign: 'center' },
-  delta: { fontSize: font.sm, fontWeight: weight.heavy },
+  note: { fontSize: font.sm, color: colors.textSecondary, fontWeight: weight.semibold },
 });

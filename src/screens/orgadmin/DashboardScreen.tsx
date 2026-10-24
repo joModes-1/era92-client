@@ -1,14 +1,16 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, RefreshControl, TouchableOpacity } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { api } from '../../api';
-import { colors, radii, font, spacing, weight, tracking } from '../../theme';
+import { useAuth } from '../../api/AuthContext';
+import { colors, radii, font, spacing, weight, orgBg } from '../../theme';
 import Icon from '../../components/Icon';
-import ScreenHeader from '../../components/ScreenHeader';
+import AppTopBar from '../../components/AppTopBar';
+import GradientButton from '../../components/GradientButton';
 import {
-  Surface, SectionHeader, EmptyState, SkeletonList,
-  TrendChart, RankedBars, initials,
+  Surface, SectionHeader, EmptyState, SkeletonList, TrendChart, RankedBars,
+  HeroCard, useHeroText, NoticeRow, StatGrid, Avatar,
 } from '../../components/ui';
 import type { RankedItem } from '../../components/ui';
 
@@ -16,6 +18,10 @@ const TREND_DAYS = 14;
 
 function today() { return new Date().toISOString().slice(0, 10); }
 function weekAgo() { return new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10); }
+/** Local date as YYYY-MM-DD, and the time as HH:MM, for the fair comparison. */
+const isoLocal = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const hhmm = (d: Date) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 
 const compact = (n: number) => {
   const v = Math.abs(n);
@@ -27,22 +33,50 @@ const compact = (n: number) => {
 /** Cash out for longer than a day is the number the owner actually worries about. */
 const OVERDUE_HOURS = 24;
 
+/** The admin screens this dashboard hands off to — all existing drawer routes. */
+const MANAGE: { route: string; label: string; icon: string }[] = [
+  { route: 'Branches', label: 'Branches', icon: 'building' },
+  { route: 'Staff', label: 'Staff', icon: 'users' },
+  { route: 'Prices', label: 'Prices', icon: 'tags' },
+  { route: 'Catalogue', label: 'Catalogue', icon: 'th-large' },
+  { route: 'Points Settings', label: 'Points', icon: 'star-half-alt' },
+  { route: 'Customers', label: 'Customers', icon: 'address-book' },
+];
+
+/**
+ * The org admin's front page, in two halves:
+ *
+ *  - How the business is doing: today's takings across every branch, the
+ *    two things that need a decision (cash held too long, exceptions), the
+ *    two-week trend, and how the branches compare.
+ *  - Where to go to change something: a short grid into the management
+ *    screens, so the summary is not the only way in from a long menu.
+ */
 export default function DashboardScreen() {
   const navigation = useNavigation<any>();
+  const ht: any = useHeroText();
+  const { actor } = useAuth();
   const [branches, setBranches] = useState<any[]>([]);
   const [exceptions, setExceptions] = useState<any[]>([]);
   const [trend, setTrend] = useState<any[]>([]);
   const [cash, setCash] = useState<{ holding: any[]; collected_today: any[] }>({ holding: [], collected_today: [] });
+  const [lastWeek, setLastWeek] = useState<any>(null);
   const [loaded, setLoaded] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
-    const [b, e, t, c] = await Promise.allSettled([
+    const now = new Date();
+    const [b, e, t, c, lw] = await Promise.allSettled([
       api.branches(weekAgo(), today()),
       api.exceptions(weekAgo(), today()),
       api.trend(TREND_DAYS),
       api.cashPosition(),
+      // Today so far against the same weekday last week UP TO THE SAME TIME
+      // (Toast "same time", DRB "period to date") — not against all of
+      // yesterday, which made every morning look like a slump.
+      api.daily(isoLocal(new Date(now.getTime() - 7 * 86400000)), undefined, hhmm(now)),
     ]);
+    if (lw.status === 'fulfilled') setLastWeek(lw.value);
     if (b.status === 'fulfilled' && Array.isArray(b.value)) setBranches(b.value);
     if (e.status === 'fulfilled' && Array.isArray(e.value)) setExceptions(e.value);
     if (t.status === 'fulfilled' && Array.isArray(t.value)) setTrend(t.value);
@@ -59,12 +93,16 @@ export default function DashboardScreen() {
     setRefreshing(false);
   };
 
+  const topBar = (
+    <AppTopBar context={actor?.org_name || 'Your business'} onMenu={() => navigation.openDrawer?.()} />
+  );
+
   if (!loaded) {
     return (
-      <View style={styles.container}>
-        <ScreenHeader title="Home" subtitle="Your whole business" />
+      <SafeAreaView style={[styles.container, orgBg()]} edges={['top']}>
+        {topBar}
         <ScrollView contentContainerStyle={styles.body}><SkeletonList rows={4} /></ScrollView>
-      </View>
+      </SafeAreaView>
     );
   }
 
@@ -79,10 +117,10 @@ export default function DashboardScreen() {
   );
 
   const todayRow = trend[trend.length - 1];
-  const yesterdayRow = trend[trend.length - 2];
   const todayGross = Number(todayRow?.gross_ugx || 0);
-  const yesterdayGross = Number(yesterdayRow?.gross_ugx || 0);
-  const delta = yesterdayGross > 0 ? Math.round(((todayGross - yesterdayGross) / yesterdayGross) * 100) : null;
+  const lastWeekGross = Number(lastWeek?.summary?.gross_ugx || 0);
+  const delta = lastWeekGross > 0 ? Math.round(((todayGross - lastWeekGross) / lastWeekGross) * 100) : null;
+  const lastWeekday = new Date(Date.now() - 7 * 86400000).toLocaleDateString(undefined, { weekday: 'short' });
 
   const heldTotal = cash.holding.reduce((s, h) => s + Number(h.held_ugx || 0), 0);
   const overdue = cash.holding.filter(
@@ -90,7 +128,12 @@ export default function DashboardScreen() {
   );
   const collectedToday = cash.collected_today.reduce((s, r) => s + Number(r.collected_ugx || 0), 0);
 
-  const clean = exceptions.length === 0;
+  // Only what needs a decision counts as "to review": unverified payments
+  // and disputes. Cancellations and handovers are records, not to-dos.
+  const unverified = exceptions.filter((x: any) => x.exception_type === 'unverified').length;
+  const disputes = exceptions.filter((x: any) => x.exception_type === 'dispute').length;
+  const toReview = unverified + disputes;
+  const clean = toReview === 0;
   const activeBranches = branches.filter((b: any) => Number(b.washes || 0) > 0).length;
   const quietBranches = branches.length - activeBranches;
 
@@ -107,8 +150,8 @@ export default function DashboardScreen() {
   }));
 
   return (
-    <View style={styles.container}>
-      <ScreenHeader title="Home" subtitle="Your whole business" />
+    <SafeAreaView style={[styles.container, orgBg()]} edges={['top']}>
+      {topBar}
 
       <ScrollView
         style={styles.scroll}
@@ -116,106 +159,84 @@ export default function DashboardScreen() {
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} />}
       >
-        {/* ── Today, across every branch ─────────────────────────
-            Same pink-to-orange brand gradient as the manager's Home hero and
-            the header bar — gradientBrandDeep (a flat dark pink, closer to
-            the sysadmin's near-black treatment) read as a different color
-            entirely rather than "the app's pink". */}
-        <LinearGradient
-          colors={[...colors.gradientBrandDeep, colors.primary]}
-          locations={[0, 0.55, 1]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.hero}
-        >
-          <View style={styles.heroBloom} pointerEvents="none" />
-          <Text style={styles.heroLabel}>MONEY TAKEN TODAY</Text>
-          <View style={styles.heroFigureRow}>
-            <Text style={styles.heroFigure} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.5}>
-              {todayGross.toLocaleString()}
-            </Text>
-            <Text style={styles.heroCurrency}>UGX</Text>
-          </View>
-
-          {delta !== null && (
+        {/* ── Today, across every branch ── */}
+        <HeroCard
+          label="Money taken today · all branches"
+          prefix="UGX"
+          value={todayGross.toLocaleString()}
+          caption={delta !== null ? (
             <View style={styles.deltaRow}>
-              <Icon name={delta >= 0 ? 'arrow-up' : 'arrow-down'} size={9} color="rgba(255,255,255,0.95)" />
-              <Text style={styles.deltaText}>
-                {Math.abs(delta)}% {delta >= 0 ? 'up on' : 'down on'} yesterday
+              {delta !== 0 ? (
+                <Icon name={delta > 0 ? 'arrow-up' : 'arrow-down'} size={13} color={delta > 0 ? (ht.up?.color ?? colors.successText) : (ht.down?.color ?? colors.errorText)} />
+              ) : null}
+              <Text style={[ht.strong, delta > 0 ? ht.up ?? { color: colors.successText } : delta < 0 ? ht.down ?? { color: colors.errorText } : null]}>
+                {delta === 0 ? 'Same as' : `${Math.abs(delta)}% ${delta > 0 ? 'up on' : 'down on'}`}
               </Text>
+              <Text style={ht.muted}>last {lastWeekday}, same time</Text>
             </View>
+          ) : (
+            <Text style={ht.muted}>Nothing yet last {lastWeekday} by this time</Text>
           )}
+          stats={[
+            { label: 'Washes', value: String(todayRow?.washes ?? 0) },
+            { label: 'Free washes', value: String(todayRow?.free_washes ?? 0) },
+            { label: 'Branches active', value: `${activeBranches}/${branches.length}` },
+          ]}
+        />
 
-          <View style={styles.heroStats}>
-            <HeroStat label="Washes" value={String(todayRow?.washes ?? 0)} />
-            <View style={styles.heroDivide} />
-            <HeroStat label="Free washes" value={String(todayRow?.free_washes ?? 0)} />
-            <View style={styles.heroDivide} />
-            <HeroStat label="Branches" value={`${activeBranches}/${branches.length}`} />
-          </View>
-        </LinearGradient>
-
-        {/* ── Money still out there ──────────────────────────── */}
-        <Surface
-          elevation="sm"
-          onPress={() => navigation.navigate('Cash Handover')}
-          style={styles.cashCard}
-        >
-          <View style={styles.cashHead}>
-            <View
-              style={[
-                styles.cashIcon,
-                { backgroundColor: overdue.length > 0 ? colors.errorSoft : heldTotal > 0 ? colors.warningSoft : colors.successSoft },
-              ]}
-            >
-              <Icon
-                name={overdue.length > 0 ? 'exclamation-triangle' : heldTotal > 0 ? 'hourglass-half' : 'check'}
-                size={13}
-                color={overdue.length > 0 ? colors.error : heldTotal > 0 ? colors.warning : colors.success}
-              />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.cashTitle}>
-                {heldTotal > 0 ? `UGX ${heldTotal.toLocaleString()} still with workers` : 'All cash collected'}
-              </Text>
-              <Text style={styles.cashSub}>
-                {collectedToday > 0
-                  ? `UGX ${collectedToday.toLocaleString()} handed in today`
-                  : 'Nothing handed in yet today'}
-              </Text>
-            </View>
-            <Icon name="chevron-right" size={11} color={colors.ink[300]} />
-          </View>
-
-          {/* Overdue is the exception worth naming, not just counting. */}
-          {overdue.length > 0 && (
-            <View style={styles.overdueBox}>
-              <Text style={styles.overdueTitle}>
-                {overdue.length === 1 ? '1 worker has' : `${overdue.length} workers have`} held cash over 24 hours
-              </Text>
-              {overdue.slice(0, 3).map((h: any) => (
-                <View key={h.id} style={styles.overdueRow}>
-                  <View style={styles.overdueAvatar}>
-                    <Text style={styles.overdueAvatarText}>{initials(h.worker_name)}</Text>
-                  </View>
-                  <Text style={styles.overdueName} numberOfLines={1}>{h.worker_name}</Text>
-                  <Text style={styles.overdueBranch} numberOfLines={1}>{h.branch_code}</Text>
-                  <Text style={styles.overdueDays}>
-                    {Math.floor(Number(h.hours_held) / 24)}d
-                  </Text>
-                  <Text style={styles.overdueAmount}>{Number(h.held_ugx).toLocaleString()}</Text>
-                </View>
-              ))}
-              {overdue.length > 3 && (
-                <Text style={styles.overdueMore}>+{overdue.length - 3} more</Text>
-              )}
-            </View>
-          )}
-        </Surface>
-
-        {/* ── Direction of travel ────────────────────────────── */}
+        {/* ── What needs a decision ── */}
         <View>
-          <SectionHeader title={`Last ${TREND_DAYS} days`} icon="chart-line" />
+          <SectionHeader title="Needs attention" />
+          <View style={{ gap: spacing.sm }}>
+            <NoticeRow
+              tone={overdue.length > 0 ? 'error' : heldTotal > 0 ? 'warning' : 'success'}
+              icon={overdue.length > 0 ? 'exclamation-triangle' : heldTotal > 0 ? 'hourglass-half' : 'check'}
+              title={heldTotal > 0 ? `UGX ${heldTotal.toLocaleString()} still with workers` : 'All cash collected'}
+              subtitle={collectedToday > 0
+                ? `UGX ${collectedToday.toLocaleString()} handed in today`
+                : 'Nothing handed in yet today'}
+              onPress={() => navigation.navigate('Cash Handover')}
+            />
+
+            {/* Overdue is the exception worth naming, not just counting. */}
+            {overdue.length > 0 && (
+              <Surface elevation="xs" padded="sm" style={styles.overdueCard}>
+                <Text style={styles.overdueTitle}>
+                  {overdue.length === 1 ? '1 worker has' : `${overdue.length} workers have`} held cash over 24 hours
+                </Text>
+                {overdue.slice(0, 3).map((h: any, i: number) => (
+                  <View key={h.id} style={[styles.overdueRow, i < Math.min(overdue.length, 3) - 1 && styles.rowBorder]}>
+                    <Avatar name={h.worker_name} size={30} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.overdueName} numberOfLines={1}>{h.worker_name}</Text>
+                      <Text style={styles.overdueMeta} numberOfLines={1}>
+                        {h.branch_code} · {Math.floor(Number(h.hours_held) / 24)} day{Math.floor(Number(h.hours_held) / 24) === 1 ? '' : 's'}
+                      </Text>
+                    </View>
+                    <Text style={styles.overdueAmount}>UGX {Number(h.held_ugx).toLocaleString()}</Text>
+                  </View>
+                ))}
+                {overdue.length > 3 && (
+                  <Text style={styles.overdueMore}>+{overdue.length - 3} more in Cash Handover</Text>
+                )}
+              </Surface>
+            )}
+
+            <NoticeRow
+              tone={clean ? 'success' : 'info'}
+              icon={clean ? 'check' : 'clipboard-check'}
+              title={clean ? 'Nothing to review this week' : `${toReview.toLocaleString()} to review this week`}
+              subtitle={clean
+                ? 'No unverified payments or disputes'
+                : [unverified ? `${unverified.toLocaleString()} unverified payments` : null, disputes ? `${disputes} disputes` : null].filter(Boolean).join(' · ')}
+              onPress={() => navigation.navigate('Exceptions')}
+            />
+          </View>
+        </View>
+
+        {/* ── Direction of travel ── */}
+        <View>
+          <SectionHeader title={`Last ${TREND_DAYS} days`} />
           <Surface elevation="sm" padded="lg">
             <TrendChart
               points={trendPoints}
@@ -230,7 +251,6 @@ export default function DashboardScreen() {
           <SectionHeader
             title="Branches this week"
             count={branches.length}
-            icon="building"
             action={quietBranches > 0 ? `${quietBranches} quiet` : undefined}
           />
           {branches.length === 0 ? (
@@ -239,12 +259,7 @@ export default function DashboardScreen() {
                 icon="building"
                 title="No branches yet"
                 message="Add your first branch to start tracking washes."
-                action={
-                  <TouchableOpacity onPress={() => navigation.navigate('Branches')} style={styles.emptyBtn} activeOpacity={0.8}>
-                    <Icon name="plus" size={10} color="#fff" />
-                    <Text style={styles.emptyBtnText}>Add a branch</Text>
-                  </TouchableOpacity>
-                }
+                action={<GradientButton title="Add a branch" icon="plus" onPress={() => navigation.navigate('Branches')} full />}
               />
             </Surface>
           ) : (
@@ -254,149 +269,81 @@ export default function DashboardScreen() {
           )}
         </View>
 
-        {/* ── What needs a decision ──────────────────────────── */}
-        <Surface
-          elevation="sm"
-          tone={clean ? colors.successSoft : colors.errorSoft}
-          borderless
-          onPress={() => navigation.navigate('Exceptions')}
-          style={styles.alert}
-        >
-          <View style={[styles.alertIcon, { backgroundColor: clean ? colors.success : colors.error }]}>
-            <Icon name={clean ? 'check' : 'exclamation'} size={13} color="#fff" />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.alertTitle, { color: clean ? colors.success : colors.error }]}>
-              {clean
-                ? 'No exceptions this week'
-                : `${exceptions.length} exception${exceptions.length === 1 ? '' : 's'} need attention`}
-            </Text>
-            <Text style={styles.alertSub}>
-              {clean ? 'Everything looks clean' : 'Disputes, unverified takings and cancellations'}
-            </Text>
-          </View>
-          <Icon name="chevron-right" size={11} color={clean ? colors.success : colors.error} />
-        </Surface>
-
         {/* ── Week roll-up, in words rather than another chart ── */}
-        <Surface elevation="sm" padded="lg" style={{ gap: spacing.md }}>
-          <Text style={styles.weekTitle}>This week</Text>
-          <View style={styles.weekGrid}>
-            <WeekStat label="Washes" value={String(totals.washes)} />
-            <WeekStat label="Taken" value={`${compact(totals.gross)}`} />
-            <WeekStat
-              label="Cash gap"
-              value={`${totals.variance > 0 ? '+' : ''}${compact(totals.variance)}`}
-              tone={totals.variance < 0 ? colors.error : totals.variance > 0 ? colors.warning : colors.success}
+        <View>
+          <SectionHeader title="This week" />
+          <Surface elevation="sm" padded="lg">
+            <StatGrid
+              items={[
+                { label: 'Washes', value: totals.washes.toLocaleString() },
+                { label: 'Taken (UGX)', value: compact(totals.gross) },
+                {
+                  label: 'Cash gap (UGX)',
+                  value: `${totals.variance > 0 ? '+' : ''}${compact(totals.variance)}`,
+                  tone: totals.variance < 0 ? 'error' : totals.variance > 0 ? 'warning' : 'success',
+                },
+              ]}
             />
+          </Surface>
+        </View>
+
+        {/* ── Where to change things ── */}
+        <View>
+          <SectionHeader title="Manage" />
+          <View style={styles.manageGrid}>
+            {MANAGE.map((m) => (
+              <TouchableOpacity
+                key={m.route}
+                style={styles.manageTile}
+                onPress={() => navigation.navigate(m.route)}
+                activeOpacity={0.75}
+                accessibilityRole="button"
+              >
+                <View style={styles.manageIcon}><Icon name={m.icon} size={18} color={colors.primary} /></View>
+                <Text style={styles.manageLabel} numberOfLines={1}>{m.label}</Text>
+              </TouchableOpacity>
+            ))}
           </View>
-        </Surface>
+        </View>
       </ScrollView>
-    </View>
-  );
-}
-
-function HeroStat({ label, value }: { label: string; value: string }) {
-  return (
-    <View style={styles.heroStat}>
-      <Text style={styles.heroStatValue} numberOfLines={1}>{value}</Text>
-      <Text style={styles.heroStatLabel} numberOfLines={1}>{label}</Text>
-    </View>
-  );
-}
-
-function WeekStat({ label, value, tone }: { label: string; value: string; tone?: string }) {
-  return (
-    <View style={styles.weekStat}>
-      <Text style={[styles.weekValue, tone ? { color: tone } : null]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
-        {value}
-      </Text>
-      <Text style={styles.weekLabel} numberOfLines={1}>{label}</Text>
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   scroll: { flex: 1 },
-  body: { padding: spacing.lg, paddingBottom: spacing.xxxl, gap: spacing.lg },
+  body: { padding: spacing.lg, paddingBottom: spacing.xxxl, gap: spacing.xl },
 
-  hero: { borderRadius: radii.lg, padding: spacing.lg, gap: 2, overflow: 'hidden' },
-  heroBloom: {
-    position: 'absolute', top: -90, right: -60,
-    width: 220, height: 220, borderRadius: 110,
-    backgroundColor: 'rgba(255,255,255,0.16)',
-  },
-  heroLabel: {
-    fontSize: font.micro, fontWeight: weight.heavy,
-    color: 'rgba(255,255,255,0.72)', letterSpacing: tracking.capsWide,
-  },
-  heroFigureRow: { flexDirection: 'row', alignItems: 'baseline', gap: 6 },
-  heroFigure: {
-    flexShrink: 1, fontSize: font.display, fontWeight: weight.black,
-    color: '#fff', letterSpacing: tracking.display,
-  },
-  heroCurrency: { fontSize: font.sm, fontWeight: weight.heavy, color: 'rgba(255,255,255,0.7)' },
-  deltaRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 1 },
-  deltaText: { fontSize: font.xs, fontWeight: weight.bold, color: 'rgba(255,255,255,0.95)' },
+  deltaRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 4 },
 
-  heroStats: {
-    flexDirection: 'row', alignItems: 'center',
-    marginTop: spacing.md, paddingTop: spacing.md,
-    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: 'rgba(255,255,255,0.22)',
-  },
-  heroStat: { flex: 1, gap: 1 },
-  heroStatValue: { fontSize: font.regular, fontWeight: weight.black, color: '#fff' },
-  heroStatLabel: { fontSize: font.micro, color: 'rgba(255,255,255,0.7)', fontWeight: weight.semibold },
-  heroDivide: { width: StyleSheet.hairlineWidth, height: 24, backgroundColor: 'rgba(255,255,255,0.22)' },
+  overdueCard: { paddingHorizontal: spacing.md, gap: 2 },
+  overdueTitle: { fontSize: font.sm, fontWeight: weight.bold, color: colors.errorText, paddingTop: spacing.xs, paddingBottom: spacing.xs },
+  overdueRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: spacing.sm + 2 },
+  rowBorder: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.borderLight },
+  overdueName: { fontSize: font.regular, fontWeight: weight.bold, color: colors.text },
+  overdueMeta: { fontSize: font.sm, color: colors.textMuted },
+  overdueAmount: { fontSize: font.regular, fontWeight: weight.heavy, color: colors.text },
+  overdueMore: { fontSize: font.sm, color: colors.textMuted, fontWeight: weight.semibold, paddingVertical: spacing.xs },
 
-  cashCard: { gap: spacing.md },
-  cashHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  cashIcon: {
-    width: 34, height: 34, borderRadius: radii.full,
+  // Three across on any phone: the tiles size to a third of the row.
+  manageGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  manageTile: {
+    flexGrow: 1,
+    flexBasis: '30%',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.bgCard,
+    borderRadius: radii.lg,
+    paddingVertical: spacing.lg,
+    paddingHorizontal: spacing.sm,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.borderLight,
+  },
+  manageIcon: {
+    width: 38, height: 38, borderRadius: radii.md,
+    backgroundColor: colors.primarySoft,
     alignItems: 'center', justifyContent: 'center',
   },
-  cashTitle: { fontSize: font.regular, fontWeight: weight.heavy, color: colors.text, letterSpacing: tracking.tight },
-  cashSub: { fontSize: font.xs, color: colors.textMuted, marginTop: 1 },
-
-  overdueBox: {
-    backgroundColor: colors.errorSoft, borderRadius: radii.md,
-    padding: spacing.md, gap: 7,
-  },
-  overdueTitle: { fontSize: font.xs, fontWeight: weight.heavy, color: colors.error },
-  overdueRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
-  overdueAvatar: {
-    width: 22, height: 22, borderRadius: radii.full, backgroundColor: '#fff',
-    alignItems: 'center', justifyContent: 'center',
-  },
-  overdueAvatarText: { fontSize: 9, fontWeight: weight.black, color: colors.error },
-  overdueName: { flex: 1, fontSize: font.xs, fontWeight: weight.bold, color: colors.text },
-  overdueBranch: { fontSize: font.micro, fontWeight: weight.heavy, color: colors.textMuted },
-  overdueDays: { fontSize: font.micro, fontWeight: weight.heavy, color: colors.error, width: 24, textAlign: 'right' },
-  overdueAmount: { fontSize: font.xs, fontWeight: weight.black, color: colors.text, minWidth: 54, textAlign: 'right' },
-  overdueMore: { fontSize: font.micro, color: colors.error, fontWeight: weight.semibold },
-
-  alert: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  alertIcon: {
-    width: 32, height: 32, borderRadius: radii.full,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  alertTitle: { fontSize: font.regular, fontWeight: weight.heavy, letterSpacing: tracking.tight },
-  alertSub: { fontSize: font.xs, color: colors.textSecondary, marginTop: 1 },
-
-  weekTitle: {
-    fontSize: font.micro, fontWeight: weight.heavy,
-    color: colors.textMuted, letterSpacing: tracking.capsWide,
-  },
-  weekGrid: { flexDirection: 'row', gap: spacing.md },
-  weekStat: { flex: 1, gap: 1 },
-  weekValue: { fontSize: font.xl, fontWeight: weight.black, color: colors.text, letterSpacing: tracking.tight },
-  weekLabel: { fontSize: font.micro, color: colors.textMuted, fontWeight: weight.semibold },
-
-  emptyBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: colors.primary, borderRadius: radii.full,
-    paddingVertical: 9, paddingHorizontal: 16,
-  },
-  emptyBtnText: { fontSize: font.sm, fontWeight: weight.heavy, color: '#fff' },
+  manageLabel: { fontSize: font.sm, fontWeight: weight.bold, color: colors.text },
 });

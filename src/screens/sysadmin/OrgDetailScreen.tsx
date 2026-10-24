@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, RefreshControl, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, RefreshControl } from 'react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { api } from '../../api';
 import { colors, radii, font, spacing, weight, tracking } from '../../theme';
 import Icon from '../../components/Icon';
@@ -11,7 +10,7 @@ import GradientButton from '../../components/GradientButton';
 import { useAppAlert } from '../../components/AppAlert';
 import {
   Surface, SectionHeader, EmptyState, SkeletonList,
-  Field, FormSheet, PillPicker, RankedBars, ListRow, initials,
+  Field, FormSheet, PillPicker, ListRow, initials, HeroCard, heroText, StatGrid, MonthBars, Hint,
 } from '../../components/ui';
 import type { Tone } from '../../theme';
 
@@ -191,7 +190,8 @@ export default function OrgDetailScreen() {
   const overdue = days != null && days < 0;
   const dueSoon = days != null && days >= 0 && days <= 7;
   const usage = org.usage || [];
-  const maxGross = Math.max(...usage.map((u: any) => Number(u.gross_ugx || 0)), 1);
+  const short = (g: number) => (g >= 1_000_000 ? `${(g / 1_000_000).toFixed(1)}M` : g >= 1000 ? `${Math.round(g / 1000)}K` : String(g));
+  const atLimit = org.max_branches != null && Number(org.branch_count) >= Number(org.max_branches);
 
   return (
     <View style={styles.container}>
@@ -203,38 +203,21 @@ export default function OrgDetailScreen() {
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} />}
       >
-        {/* ── What they pay us ─────────────────────────────────── */}
-        <LinearGradient
-          colors={[colors.ink[800], colors.ink[950]]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.hero}
+        {/* ── What they pay us ── */}
+        <HeroCard
+          label={org.plan_name || 'No plan assigned'}
+          badge={<Badge label={bm.label} tone={bm.tone} small />}
+          value={org.plan_price_ugx != null ? ugx(org.plan_price_ugx) : '—'}
+          prefix="UGX"
+          caption={org.billing_cycle ? `per ${org.billing_cycle.replace('ly', '')}` : undefined}
         >
-          <View style={styles.heroTop}>
-            <Text style={styles.heroKicker}>SUBSCRIPTION</Text>
-            <Badge label={bm.label} tone={bm.tone} small />
-          </View>
-
-          <Text style={styles.heroPlan} numberOfLines={1}>
-            {org.plan_name || 'No plan assigned'}
-          </Text>
-
-          <View style={styles.heroPriceRow}>
-            <Text style={styles.heroPrice} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}>
-              {org.plan_price_ugx != null ? ugx(org.plan_price_ugx) : '—'}
-            </Text>
-            <Text style={styles.heroPer}>
-              UGX{org.billing_cycle ? ` / ${org.billing_cycle.replace('ly', '')}` : ''}
-            </Text>
-          </View>
-
           <View style={styles.heroFoot}>
             <Icon
               name={overdue ? 'exclamation-triangle' : dueSoon ? 'clock' : 'calendar-check'}
               size={11}
-              color={overdue ? '#FF8A9B' : 'rgba(255,255,255,0.7)'}
+              color={overdue ? '#FFB4C0' : 'rgba(255,255,255,0.72)'}
             />
-            <Text style={[styles.heroFootText, overdue && styles.heroFootAlert]}>
+            <Text style={[heroText.muted, overdue && [heroText.strong, heroText.alert]]}>
               {days == null
                 ? 'No renewal date set'
                 : overdue
@@ -244,71 +227,58 @@ export default function OrgDetailScreen() {
                 : `Renews in ${days} day${days === 1 ? '' : 's'}`}
             </Text>
             <View style={{ flex: 1 }} />
-            <Text style={styles.heroPaid}>{ugx(org.paid_total_ugx)} paid to date</Text>
+            <Text style={heroText.muted}>{ugx(org.paid_total_ugx)} paid to date</Text>
           </View>
-        </LinearGradient>
+        </HeroCard>
 
         {/* What this status means, in words */}
-        <View style={styles.explainRow}>
-          <Icon name="info-circle" size={11} color={colors.textMuted} />
-          <Text style={styles.explainText}>{bm.explain}</Text>
-        </View>
+        <Hint style={{ marginTop: -spacing.sm }}>{bm.explain}</Hint>
 
-        {/* ── Actions ──────────────────────────────────────────── */}
+        {/* ── Actions ── */}
         <View style={styles.actionRow}>
           <GradientButton title="Record payment" onPress={openPaySheet} icon="hand-holding-usd" full />
-          <TouchableOpacity style={styles.secondaryBtn} onPress={openPlanSheet} activeOpacity={0.75}>
-            <Icon name="sliders-h" size={11} color={colors.primary} />
-            <Text style={styles.secondaryText}>Change plan</Text>
-          </TouchableOpacity>
+          <GradientButton title="Change plan" variant="tonal" onPress={openPlanSheet} icon="sliders-h" full />
         </View>
 
-        {/* ── How much business they do on the software ────────── */}
+        {/* ── How much business they do on the software ── */}
         <View>
-          <SectionHeader title="Their business, last 6 months" icon="chart-bar" />
+          <SectionHeader title="Their business, last 6 months" />
           <Surface elevation="sm" padded="lg">
             {usage.every((u: any) => Number(u.gross_ugx || 0) === 0) ? (
               <EmptyState icon="chart-bar" title="No washes recorded" message="This tenant has not processed any washes yet." />
             ) : (
-              <View style={styles.months}>
-                {usage.map((u: any) => {
-                  const g = Number(u.gross_ugx || 0);
-                  const h = Math.max(3, (g / maxGross) * 72);
-                  const isLast = u === usage[usage.length - 1];
-                  return (
-                    <View key={u.month} style={styles.monthCol}>
-                      <Text style={styles.monthValue} numberOfLines={1}>
-                        {g >= 1_000_000 ? `${(g / 1_000_000).toFixed(1)}M` : g >= 1000 ? `${Math.round(g / 1000)}K` : g}
-                      </Text>
-                      <View
-                        style={[
-                          styles.monthBar,
-                          { height: h, backgroundColor: isLast ? colors.primary : colors.primaryTint },
-                        ]}
-                      />
-                      <Text style={[styles.monthLabel, isLast && styles.monthLabelOn]}>{monthLabel(u.month)}</Text>
-                      <Text style={styles.monthWashes}>{u.washes}</Text>
-                    </View>
-                  );
-                })}
-              </View>
+              <MonthBars
+                height={72}
+                legend="UGX taken · washes below"
+                items={usage.map((u: any) => ({
+                  key: u.month,
+                  label: monthLabel(u.month),
+                  value: Number(u.gross_ugx || 0),
+                  top: short(Number(u.gross_ugx || 0)),
+                  sub: String(u.washes ?? 0),
+                }))}
+              />
             )}
-            <View style={styles.monthLegend}>
-              <Text style={styles.monthLegendText}>UGX taken · washes below</Text>
-            </View>
           </Surface>
         </View>
 
-        {/* ── Tenant size ──────────────────────────────────────── */}
+        {/* ── Tenant size ── */}
         <View>
-          <SectionHeader title="Size" icon="building" />
+          <SectionHeader title="Size" />
           <Surface elevation="sm" padded="lg" style={{ gap: spacing.md }}>
-            <View style={styles.sizeGrid}>
-              <SizeStat label="Branches" value={org.branch_count} limit={org.max_branches} />
-              <SizeStat label="Staff" value={org.staff_count} />
-              <SizeStat label="Customers" value={org.client_count} />
-            </View>
-            {org.max_branches != null && Number(org.branch_count) >= Number(org.max_branches) && (
+            <StatGrid
+              items={[
+                {
+                  label: 'Branches',
+                  value: Number(org.branch_count || 0),
+                  suffix: org.max_branches != null ? `/${org.max_branches}` : undefined,
+                  tone: atLimit ? 'warning' : undefined,
+                },
+                { label: 'Staff', value: Number(org.staff_count || 0) },
+                { label: 'Customers', value: Number(org.client_count || 0) },
+              ]}
+            />
+            {atLimit && (
               <View style={styles.limitWarn}>
                 <Icon name="exclamation-triangle" size={11} color={colors.warning} />
                 <Text style={styles.limitWarnText}>
@@ -319,15 +289,18 @@ export default function OrgDetailScreen() {
           </Surface>
         </View>
 
-        {/* ── Branches ─────────────────────────────────────────── */}
+        {/* ── Branches ── */}
         {org.branches?.length > 0 && (
           <View>
-            <SectionHeader title="Branches" count={org.branches.length} icon="map-marker-alt" />
-            <Surface elevation="sm" padded="sm">
+            <SectionHeader title="Branches" count={org.branches.length} />
+            <Surface elevation="sm" padded="sm" style={styles.listCard}>
               {org.branches.map((b: any, i: number) => (
                 <ListRow
                   key={b.id}
-                  leading={b.code}
+                  // A branch code ("NTD") is three letters — passed as a
+                  // string it was read as an icon name and drawn as a
+                  // fallback circle. It gets its own code tag instead.
+                  leading={<View style={styles.codeTag}><Text style={styles.codeText}>{b.code}</Text></View>}
                   title={b.name}
                   subtitle={`${b.staff_count} staff`}
                   trailing={<Badge label={b.status === 'active' ? 'Active' : b.status} tone={b.status === 'active' ? 'success' : 'neutral'} small />}
@@ -341,8 +314,8 @@ export default function OrgDetailScreen() {
         {/* ── Who runs it ──────────────────────────────────────── */}
         {org.admins?.length > 0 && (
           <View>
-            <SectionHeader title="Org admins" count={org.admins.length} icon="user-shield" />
-            <Surface elevation="sm" padded="sm">
+            <SectionHeader title="Org admins" count={org.admins.length} />
+            <Surface elevation="sm" padded="sm" style={styles.listCard}>
               {org.admins.map((a: any, i: number) => (
                 <ListRow
                   key={a.id}
@@ -364,13 +337,13 @@ export default function OrgDetailScreen() {
 
         {/* ── Payment history ──────────────────────────────────── */}
         <View>
-          <SectionHeader title="Payments" count={org.payments?.length || 0} icon="receipt" />
+          <SectionHeader title="Payments" count={org.payments?.length || 0} />
           {!org.payments || org.payments.length === 0 ? (
             <Surface elevation="sm" padded="lg">
               <EmptyState icon="receipt" title="No payments yet" message="Record their first payment when it arrives." />
             </Surface>
           ) : (
-            <Surface elevation="sm" padded="sm">
+            <Surface elevation="sm" padded="sm" style={styles.listCard}>
               {org.payments.map((p: any, i: number) => (
                 <ListRow
                   key={p.id}
@@ -392,7 +365,7 @@ export default function OrgDetailScreen() {
 
         {org.billing_notes ? (
           <Surface elevation="sm" padded="lg" style={{ gap: 5 }}>
-            <Text style={styles.noteLabel}>BILLING NOTES</Text>
+            <Text style={styles.noteLabel}>Billing notes</Text>
             <Text style={styles.noteText}>{org.billing_notes}</Text>
           </Surface>
         ) : null}
@@ -503,71 +476,29 @@ export default function OrgDetailScreen() {
   );
 }
 
-function SizeStat({ label, value, limit }: { label: string; value: any; limit?: any }) {
-  const atLimit = limit != null && Number(value) >= Number(limit);
-  return (
-    <View style={styles.sizeStat}>
-      <Text style={[styles.sizeValue, atLimit && { color: colors.warning }]}>
-        {Number(value || 0)}
-        {limit != null && <Text style={styles.sizeLimit}>/{limit}</Text>}
-      </Text>
-      <Text style={styles.sizeLabel}>{label}</Text>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   scroll: { flex: 1 },
-  body: { padding: spacing.lg, paddingBottom: spacing.xxxl, gap: spacing.lg },
+  body: { padding: spacing.lg, paddingBottom: spacing.xxxl, gap: spacing.xl },
 
-  hero: { borderRadius: radii.lg, padding: spacing.lg, gap: 3 },
-  heroTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  heroKicker: {
-    fontSize: font.micro, fontWeight: weight.heavy,
-    color: 'rgba(255,255,255,0.55)', letterSpacing: tracking.capsWide,
-  },
-  heroPlan: { fontSize: font.regular, fontWeight: weight.heavy, color: 'rgba(255,255,255,0.9)', marginTop: 4 },
-  heroPriceRow: { flexDirection: 'row', alignItems: 'baseline', gap: 6 },
-  heroPrice: { flexShrink: 1, fontSize: font.display, fontWeight: weight.black, color: '#fff', letterSpacing: tracking.display },
-  heroPer: { fontSize: font.xs, fontWeight: weight.heavy, color: 'rgba(255,255,255,0.55)' },
   heroFoot: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
-    marginTop: spacing.md, paddingTop: spacing.md,
-    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: 'rgba(255,255,255,0.16)',
+    marginTop: spacing.lg, paddingTop: spacing.md,
+    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: 'rgba(255,255,255,0.22)',
   },
-  heroFootText: { fontSize: font.xs, color: 'rgba(255,255,255,0.75)', fontWeight: weight.semibold },
-  heroFootAlert: { color: '#FF8A9B', fontWeight: weight.heavy },
-  heroPaid: { fontSize: font.micro, color: 'rgba(255,255,255,0.5)' },
-
-  explainRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 7, marginTop: -spacing.sm, paddingHorizontal: spacing.xs },
-  explainText: { flex: 1, fontSize: font.xs, color: colors.textMuted, lineHeight: 16 },
 
   actionRow: { gap: spacing.sm },
-  secondaryBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7,
-    minHeight: 44, borderRadius: radii.md, backgroundColor: colors.primarySoft,
+  listCard: { paddingHorizontal: spacing.md },
+
+  codeTag: {
+    width: 48, height: 28, borderRadius: radii.sm,
+    backgroundColor: colors.ink[900], alignItems: 'center', justifyContent: 'center',
   },
-  secondaryText: { fontSize: font.sm, fontWeight: weight.heavy, color: colors.primary },
+  codeText: { fontSize: font.xs, fontWeight: weight.black, color: '#fff', letterSpacing: tracking.caps },
 
-  months: { flexDirection: 'row', alignItems: 'flex-end', gap: spacing.sm, minHeight: 118 },
-  monthCol: { flex: 1, alignItems: 'center', gap: 3 },
-  monthValue: { fontSize: font.micro, fontWeight: weight.heavy, color: colors.textSecondary },
-  monthBar: { width: '100%', borderTopLeftRadius: 4, borderTopRightRadius: 4 },
-  monthLabel: { fontSize: font.micro, color: colors.textMuted, fontWeight: weight.semibold },
-  monthLabelOn: { color: colors.primary, fontWeight: weight.heavy },
-  monthWashes: { fontSize: font.micro, color: colors.ink[400] },
-  monthLegend: { marginTop: spacing.sm, alignItems: 'center' },
-  monthLegendText: { fontSize: font.micro, color: colors.textMuted },
-
-  sizeGrid: { flexDirection: 'row', gap: spacing.md },
-  sizeStat: { flex: 1, gap: 1 },
-  sizeValue: { fontSize: font.xl, fontWeight: weight.black, color: colors.text, letterSpacing: tracking.tight },
-  sizeLimit: { fontSize: font.sm, fontWeight: weight.bold, color: colors.textMuted },
-  sizeLabel: { fontSize: font.micro, color: colors.textMuted, fontWeight: weight.semibold },
   limitWarn: { flexDirection: 'row', alignItems: 'flex-start', gap: 7 },
-  limitWarnText: { flex: 1, fontSize: font.xs, color: colors.warning, fontWeight: weight.semibold, lineHeight: 16 },
+  limitWarnText: { flex: 1, fontSize: font.sm, color: colors.warningText, fontWeight: weight.semibold, lineHeight: 18 },
 
-  noteLabel: { fontSize: font.micro, fontWeight: weight.heavy, color: colors.textMuted, letterSpacing: tracking.capsWide },
-  noteText: { fontSize: font.sm, color: colors.text, lineHeight: 19 },
+  noteLabel: { fontSize: font.sm, fontWeight: weight.bold, color: colors.textSecondary },
+  noteText: { fontSize: font.regular, color: colors.text, lineHeight: 20 },
 });

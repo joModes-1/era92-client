@@ -1,25 +1,21 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
-import { useNavigation } from '@react-navigation/native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, ActivityIndicator } from 'react-native';
 import { useAuth } from '../../api/AuthContext';
 import { api } from '../../api';
-import { colors, radii, font, spacing, weight, tracking, Tone } from '../../theme';
-import Badge from '../../components/Badge';
-import AppTopBar from '../../components/AppTopBar';
-import ComponentButton1 from '../../components/buttons/ComponentButton1';
+import { colors, radii, spacing, weight, staffType, staffText, orgBg } from '../../theme';
+import ScreenHeader from '../../components/ScreenHeader';
+import GradientButton from '../../components/GradientButton';
 import Icon from '../../components/Icon';
 import { useAppAlert } from '../../components/AppAlert';
 import {
   Surface, SectionHeader, EmptyState, SkeletonList,
-  Field, PillPicker, FormSheet, initials,
+  Field, PillPicker, FormSheet, Avatar,
 } from '../../components/ui';
 
 type Role = 'orgadmin' | 'manager' | 'worker';
 
 const ROLE_LABEL: Record<Role, string> = { orgadmin: 'Org Admin', manager: 'Manager', worker: 'Worker' };
-const ROLE_TONE: Record<string, Tone> = { orgadmin: 'primary', manager: 'info', worker: 'neutral' };
+const GROUP_LABEL: Record<Role, string> = { orgadmin: 'Org admins', manager: 'Managers', worker: 'Workers' };
 
 /** +256706965418 → 070 696 5418, matching how the server reads it back. */
 function displayPhone(e164: string): string {
@@ -31,7 +27,6 @@ function displayPhone(e164: string): string {
 
 export default function StaffScreen() {
   const { actor } = useAuth();
-  const navigation = useNavigation<any>();
   const alert = useAppAlert();
   const isOrgAdmin = actor?.role === 'orgadmin';
   // Backend rule (staffRoutes.ts): orgadmin may create orgadmin/manager/worker;
@@ -150,26 +145,75 @@ export default function StaffScreen() {
 
   if (!loaded) {
     return (
-      <SafeAreaView style={styles.container} edges={['top']}>
-        <AppTopBar context="Staff" onMenu={() => navigation.openDrawer?.()} />
+      <View style={[styles.container, orgBg()]}>
+        <ScreenHeader title="Staff" />
         <ScrollView contentContainerStyle={styles.body}><SkeletonList rows={5} showHeader={false} /></ScrollView>
-      </SafeAreaView>
+      </View>
     );
   }
 
-  // Group by role so the hierarchy is visible at a glance.
+  // The working team first, grouped by role so the hierarchy reads at a
+  // glance; suspended accounts collect in one group at the end. They used to
+  // sit among the active workers — first, as it happened — each on its own
+  // tall card, so a crew of twenty took a dozen screens to scan.
   const order: Role[] = ['orgadmin', 'manager', 'worker'];
+  const active = staff.filter((s: any) => s.status === 'active');
+  const suspended = staff.filter((s: any) => s.status !== 'active');
+  const roleOf = (s: any): Role => (order.includes(s.role) ? s.role : 'worker');
   const grouped = order
-    .map((r) => ({ role: r, members: staff.filter((s: any) => s.role === r) }))
+    .map((r) => ({ key: r, title: GROUP_LABEL[r], members: active.filter((s: any) => roleOf(s) === r) }))
     .filter((g) => g.members.length > 0);
-  const other = staff.filter((s: any) => !order.includes(s.role));
-  if (other.length) grouped.push({ role: 'worker' as Role, members: other });
+  if (suspended.length) grouped.push({ key: 'suspended' as Role, title: 'Suspended', members: suspended });
 
-  const activeCount = staff.filter((s: any) => s.status === 'active').length;
+  // The row shows who they are and a status word; suspending sits one tap
+  // in (with its own confirm), not as a red button on every row — a
+  // destructive action is never the loudest thing in a list (Apple HIG,
+  // Polaris). Suspend keeps their history; nothing here deletes.
+  const renderMember = (s: any, i: number, list: any[]) => {
+    const isActive = s.status === 'active';
+    const busy = busyId === s.id;
+    return (
+      <TouchableOpacity
+        key={s.id}
+        style={[styles.row, i < list.length - 1 && styles.rowBorder]}
+        onPress={() => toggleStatus(s)}
+        activeOpacity={0.7}
+        disabled={busy}
+        accessibilityRole="button"
+        accessibilityLabel={`${s.full_name}, ${isActive ? 'active' : 'suspended'}. ${isActive ? 'Suspend' : 'Activate'}`}
+      >
+        <Avatar name={s.full_name} size={38} variant={isActive ? 'soft' : 'muted'} />
+        <View style={styles.who}>
+          <Text style={[styles.name, !isActive && styles.nameOff]} numberOfLines={1}>{s.full_name}</Text>
+          {/* Phone leads: it is how they sign in. A missing one is called
+              out rather than left blank, because that account cannot be
+              signed into. */}
+          <Text style={[styles.meta, !s.phone && styles.metaWarn]} numberOfLines={1}>
+            {s.phone ? displayPhone(s.phone) : 'No phone — cannot sign in'}
+            {s.branch_name ? ` · ${s.branch_name}` : ''}
+            {!isActive && s.role ? ` · ${ROLE_LABEL[roleOf(s)]}` : ''}
+          </Text>
+        </View>
+        {busy ? (
+          <ActivityIndicator size="small" color={colors.primary} />
+        ) : (
+          <View style={[styles.status, isActive ? styles.statusOn : styles.statusOff]}>
+            <Text style={[styles.statusText, { color: isActive ? colors.successText : staffText.secondary }]}>
+              {isActive ? 'Active' : 'Suspended'}
+            </Text>
+          </View>
+        )}
+        <Icon name="chevron-right" size={14} color={staffText.muted} />
+      </TouchableOpacity>
+    );
+  };
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      <AppTopBar context="Staff" onMenu={() => navigation.openDrawer?.()} />
+    <View style={[styles.container, orgBg()]}>
+      <ScreenHeader
+        title="Staff"
+        subtitle={`${active.length} active of ${staff.length}`}
+      />
 
       <ScrollView
         style={styles.scroll}
@@ -177,19 +221,7 @@ export default function StaffScreen() {
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} />}
       >
-        {/* The page's own title and primary action, rather than a header
-            band with an icon-only button — matching how the new screens
-            lead with a real headline and a full-width CTA. */}
-        <View>
-          <Text style={styles.title}>Your team</Text>
-          <Text style={styles.subtitle}>{activeCount} active of {staff.length}</Text>
-        </View>
-
-        <ComponentButton1
-          title="Add staff member"
-          onPress={openCreate}
-          icon="plus"
-        />
+        <GradientButton title="Add staff member" variant="tonal" icon="user-plus" onPress={openCreate} full />
 
         {staff.length === 0 ? (
           <Surface elevation="sm" padded="lg">
@@ -197,83 +229,11 @@ export default function StaffScreen() {
           </Surface>
         ) : (
           grouped.map((g) => (
-            <View key={g.role}>
-              <SectionHeader title={`${ROLE_LABEL[g.role]}s`} count={g.members.length} />
-              <View style={{ gap: spacing.sm }}>
-                {g.members.map((s: any) => {
-                  const isActive = s.status === 'active';
-                  const busy = busyId === s.id;
-                  return (
-                    <Surface
-                      key={s.id}
-                      elevation="none"
-                      borderless
-                      tone={colors.bgSunken}
-                      style={[styles.card, !isActive && styles.cardOff]}
-                    >
-                      <View style={styles.head}>
-                        {/* Active staff get the brand roundel; suspended
-                            ones fall back to a flat grey so the colour
-                            itself signals who is currently working. */}
-                        {isActive ? (
-                          <LinearGradient
-                            colors={colors.rewardIconGradient}
-                            start={colors.rewardIconGradientStart}
-                            end={colors.rewardIconGradientEnd}
-                            style={styles.avatar}
-                          >
-                            <Text style={styles.avatarText}>{initials(s.full_name)}</Text>
-                          </LinearGradient>
-                        ) : (
-                          <View style={[styles.avatar, styles.avatarOff]}>
-                            <Text style={[styles.avatarText, styles.avatarTextOff]}>
-                              {initials(s.full_name)}
-                            </Text>
-                          </View>
-                        )}
-
-                        <View style={styles.who}>
-                          <Text style={styles.name} numberOfLines={1}>{s.full_name}</Text>
-                          {/* Phone leads: it is how they sign in. A missing
-                              one is called out rather than left blank,
-                              because that account cannot be signed into. */}
-                          <Text style={styles.meta} numberOfLines={1}>
-                            {s.phone
-                              ? displayPhone(s.phone)
-                              : 'No phone — cannot sign in'}
-                            {s.branch_name ? ` · ${s.branch_name}` : ''}
-                          </Text>
-                        </View>
-
-                        <Badge
-                          label={isActive ? 'Active' : 'Suspended'}
-                          tone={isActive ? 'success' : 'error'}
-                          dot
-                          small
-                        />
-                      </View>
-
-                      <View style={styles.actions}>
-                        <TouchableOpacity
-                          style={styles.actionBtn}
-                          disabled={busy}
-                          onPress={() => toggleStatus(s)}
-                          activeOpacity={0.6}
-                        >
-                          <Icon
-                            name={isActive ? 'user-slash' : 'user-check'}
-                            size={11}
-                            color={isActive ? colors.error : colors.success}
-                          />
-                          <Text style={[styles.actionText, { color: isActive ? colors.error : colors.success }]}>
-                            {isActive ? 'Suspend' : 'Activate'}
-                          </Text>
-                        </TouchableOpacity>
-                      </View>
-                    </Surface>
-                  );
-                })}
-              </View>
+            <View key={g.key}>
+              <SectionHeader title={g.title} count={g.members.length} />
+              <Surface elevation="sm" padded="sm" style={[styles.listCard, g.key === ('suspended' as Role) && styles.listCardOff]}>
+                {g.members.map((s: any, i: number) => renderMember(s, i, g.members))}
+              </Surface>
             </View>
           ))
         )}
@@ -337,66 +297,45 @@ export default function StaffScreen() {
             />
           ) : (
             <View style={styles.locked}>
-              <Text style={styles.lockedLabel}>BRANCH</Text>
+              <Text style={styles.lockedLabel}>Branch</Text>
               <View style={styles.lockedRow}>
-                <Icon name="lock" size={11} color={colors.textMuted} />
+                <Icon name="lock" size={14} color={colors.textMuted} />
                 <Text style={styles.lockedText}>{actor?.branch_name || 'Your branch'}</Text>
               </View>
             </View>
           )
         )}
       </FormSheet>
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.bgCard },
+  container: { flex: 1, backgroundColor: colors.bg },
   scroll: { flex: 1 },
-  body: { padding: spacing.lg, paddingBottom: spacing.xxxl, gap: spacing.lg },
+  body: { padding: spacing.lg, paddingBottom: spacing.xxxl, gap: spacing.xl },
 
-  title: {
-    fontSize: font.xxl,
-    fontWeight: weight.black,
-    color: colors.text,
-    letterSpacing: tracking.tight,
-  },
-  subtitle: { fontSize: font.sm, color: colors.textMuted, marginTop: 2 },
-
-  card: { gap: spacing.md },
-  cardOff: { opacity: 0.72 },
-  head: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  avatar: {
-    width: 38, height: 38, borderRadius: radii.full,
-    backgroundColor: colors.primarySoft,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  avatarOff: { backgroundColor: colors.bgSunken },
-  // White on the gradient roundel; the suspended variant overrides both
-  // the fill and this back to muted grey.
-  avatarText: { fontSize: font.sm, fontWeight: weight.heavy, color: '#fff' },
-  avatarTextOff: { color: colors.textMuted },
+  listCard: { paddingHorizontal: spacing.md },
+  listCardOff: { backgroundColor: colors.bg },
+  row: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: spacing.md, minHeight: 60 },
+  rowBorder: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.borderLight },
   who: { flex: 1, gap: 2 },
-  name: { fontSize: font.regular, fontWeight: weight.heavy, color: colors.text, letterSpacing: tracking.tight },
-  meta: { fontSize: font.xs, color: colors.textMuted },
+  name: { ...staffType.rowTitle, fontSize: 16 },
+  nameOff: { color: staffText.secondary },
+  meta: { ...staffType.meta },
+  metaWarn: { color: colors.warningText, fontWeight: weight.semibold },
 
-  actions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingTop: spacing.md,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.borderLight,
-  },
-  actionBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 2 },
-  actionDivider: { width: StyleSheet.hairlineWidth, height: 16, backgroundColor: colors.border },
-  actionText: { fontSize: font.sm, fontWeight: weight.bold, color: colors.textSecondary },
+  status: { borderRadius: radii.full, paddingHorizontal: 9, paddingVertical: 3 },
+  statusOn: { backgroundColor: colors.successSoft },
+  statusOff: { backgroundColor: colors.bgSunken },
+  statusText: { ...staffType.caption },
 
-  locked: { gap: 7, marginBottom: spacing.lg },
-  lockedLabel: { fontSize: font.micro, fontWeight: weight.heavy, color: colors.textSecondary, letterSpacing: tracking.capsWide },
+  locked: { gap: 6, marginBottom: spacing.lg },
+  lockedLabel: { ...staffType.label, color: staffText.secondary },
   lockedRow: {
     flexDirection: 'row', alignItems: 'center', gap: 7,
     backgroundColor: colors.bgSunken, borderRadius: radii.md,
     paddingVertical: 13, paddingHorizontal: spacing.lg,
   },
-  lockedText: { fontSize: font.regular, color: colors.textSecondary, fontWeight: weight.medium },
+  lockedText: { fontSize: 16, color: staffText.secondary, fontWeight: weight.regular },
 });

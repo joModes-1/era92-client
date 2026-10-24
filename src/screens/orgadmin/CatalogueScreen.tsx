@@ -1,12 +1,12 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, Switch } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl } from 'react-native';
 import { api } from '../../api';
 import { useAuth } from '../../api/AuthContext';
-import { colors, radii, font, spacing, weight, tracking } from '../../theme';
+import { colors, radii, font, spacing, weight, orgBg } from '../../theme';
 import Icon from '../../components/Icon';
 import ScreenHeader, { HeaderAction } from '../../components/ScreenHeader';
 import { useAppAlert } from '../../components/AppAlert';
-import { Surface, SectionHeader, EmptyState, SkeletonList, Field, FormSheet } from '../../components/ui';
+import { Surface, SectionHeader, EmptyState, SkeletonList, Field, FormSheet, Segmented, Hint, Toggle } from '../../components/ui';
 
 type Tab = 'vehicles' | 'services';
 
@@ -101,7 +101,7 @@ export default function CatalogueScreen() {
 
   if (!loaded) {
     return (
-      <View style={styles.container}>
+      <View style={[styles.container, orgBg()]}>
         <ScreenHeader title="Catalogue" />
         <ScrollView contentContainerStyle={styles.body}><SkeletonList rows={5} showHeader={false} /></ScrollView>
       </View>
@@ -112,7 +112,7 @@ export default function CatalogueScreen() {
   const sortedVcs = [...vehicleClasses].sort((a, b) => a.sort_order - b.sort_order);
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, orgBg()]}>
       <ScreenHeader
         title="Catalogue"
         subtitle={
@@ -123,29 +123,15 @@ export default function CatalogueScreen() {
         action={<HeaderAction icon="plus" onPress={() => setCreateVisible(true)} />}
       />
 
-      {/* Segmented control */}
-      <View style={styles.segment}>
-        {(['vehicles', 'services'] as Tab[]).map((t) => {
-          const on = tab === t;
-          return (
-            <TouchableOpacity
-              key={t}
-              onPress={() => setTab(t)}
-              style={[styles.segmentBtn, on && styles.segmentBtnOn]}
-              activeOpacity={0.8}
-            >
-              <Text style={[styles.segmentText, on && styles.segmentTextOn]}>
-                {t === 'vehicles' ? 'Car types' : 'Wash types'}
-              </Text>
-              <View style={[styles.segmentCount, on && styles.segmentCountOn]}>
-                <Text style={[styles.segmentCountText, on && styles.segmentCountTextOn]}>
-                  {t === 'vehicles' ? vehicleClasses.length : services.length}
-                </Text>
-              </View>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
+      <Segmented
+        style={styles.segment}
+        value={tab}
+        onChange={setTab}
+        options={[
+          { value: 'vehicles', label: 'Car types', count: vehicleClasses.length },
+          { value: 'services', label: 'Wash types', count: services.length },
+        ]}
+      />
 
       <ScrollView
         style={styles.scroll}
@@ -171,12 +157,11 @@ export default function CatalogueScreen() {
                       <Text style={[styles.rowName, !v.active && styles.rowNameOff]} numberOfLines={1}>{v.name}</Text>
                       <ScopeTag item={v} isManager={isManager} />
                     </View>
-                    <Switch
+                    <Toggle
                       value={v.active}
                       onValueChange={() => toggleActive(v, true)}
                       disabled={busyId === v.id || !canEdit(v)}
-                      trackColor={{ false: colors.border, true: colors.primary }}
-                      thumbColor="#fff"
+                      accessibilityLabel={`${v.name} available`}
                     />
                   </View>
                 ))}
@@ -198,12 +183,11 @@ export default function CatalogueScreen() {
                       <Text style={[styles.rowName, !s.active && styles.rowNameOff]} numberOfLines={1}>{s.name}</Text>
                       <ScopeTag item={s} isManager={isManager} />
                     </View>
-                    <Switch
+                    <Toggle
                       value={s.active}
                       onValueChange={() => toggleActive(s, false)}
                       disabled={busyId === s.id || !canEdit(s)}
-                      trackColor={{ false: colors.border, true: colors.primary }}
-                      thumbColor="#fff"
+                      accessibilityLabel={`${s.name} available`}
                     />
                   </View>
 
@@ -215,7 +199,7 @@ export default function CatalogueScreen() {
                       activeOpacity={0.7}
                     >
                       <Icon name="star" size={10} color={s.is_default ? colors.accent : colors.textMuted} solid={s.is_default} />
-                      <Text style={[styles.flagText, s.is_default && { color: colors.accent }]}>
+                      <Text style={[styles.flagText, s.is_default && { color: colors.accentText }]}>
                         {s.is_default ? 'Default' : 'Make default'}
                       </Text>
                     </TouchableOpacity>
@@ -227,7 +211,7 @@ export default function CatalogueScreen() {
                       activeOpacity={0.7}
                     >
                       <Icon name="gift" size={10} color={s.earns_point ? colors.success : colors.textMuted} />
-                      <Text style={[styles.flagText, s.earns_point && { color: colors.success }]}>
+                      <Text style={[styles.flagText, s.earns_point && { color: colors.successText }]}>
                         {s.earns_point ? 'Earns ' + Number(s.client_points_awarded || 0) + ' pts' : 'No points'}
                       </Text>
                     </TouchableOpacity>
@@ -236,14 +220,11 @@ export default function CatalogueScreen() {
               ))}
             </View>
 
-            <View style={styles.hint}>
-              <Icon name="info-circle" size={11} color={colors.textMuted} />
-              <Text style={styles.hintText}>
-                {isManager
-                  ? 'Turn points off for add-ons that should not reward clients. How many points each type gives is set in Points Settings. Items marked shared belong to the whole organisation; only an org admin can change those.'
-                  : 'Turn points off for add-ons that should not reward clients. How many points each type gives is set in Points Settings.'}
-              </Text>
-            </View>
+            <Hint style={{ marginTop: spacing.xs }}>
+              {isManager
+                ? 'Turn points off for add-ons that should not reward clients. How many points each type gives is set in Points Settings. Items marked shared belong to the whole organisation; only an org admin can change those.'
+                : 'Turn points off for add-ons that should not reward clients. How many points each type gives is set in Points Settings.'}
+            </Hint>
           </>
         )}
       </ScrollView>
@@ -280,7 +261,7 @@ function ScopeTag({ item, isManager }: { item: any; isManager: boolean }) {
   const shared = item.branch_id === null;
   return (
     <Text style={[styles.scopeTag, shared ? styles.scopeShared : styles.scopeMine]}>
-      {shared ? 'SHARED · ORG-WIDE' : 'YOUR BRANCH'}
+      {shared ? 'Shared · org-wide' : 'Your branch'}
     </Text>
   );
 }
@@ -290,34 +271,7 @@ const styles = StyleSheet.create({
   scroll: { flex: 1 },
   body: { padding: spacing.lg, paddingBottom: spacing.xxxl, gap: spacing.md },
 
-  segment: {
-    flexDirection: 'row',
-    gap: 4,
-    backgroundColor: colors.bgSunken,
-    marginHorizontal: spacing.lg,
-    marginTop: spacing.lg,
-    borderRadius: radii.md,
-    padding: 4,
-  },
-  segmentBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 7,
-    paddingVertical: 9,
-    borderRadius: radii.sm,
-  },
-  segmentBtnOn: { backgroundColor: colors.bgCard },
-  segmentText: { fontSize: font.sm, fontWeight: weight.bold, color: colors.textSecondary },
-  segmentTextOn: { color: colors.text },
-  segmentCount: {
-    minWidth: 18, paddingHorizontal: 5, paddingVertical: 1,
-    borderRadius: radii.full, backgroundColor: colors.border, alignItems: 'center',
-  },
-  segmentCountOn: { backgroundColor: colors.primarySoft },
-  segmentCountText: { fontSize: font.micro, fontWeight: weight.heavy, color: colors.textSecondary },
-  segmentCountTextOn: { color: colors.primary },
+  segment: { marginHorizontal: spacing.lg, marginTop: spacing.lg },
 
   row: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: spacing.md },
   rowBorder: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.borderLight },
@@ -327,12 +281,12 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   orderChipOff: { backgroundColor: colors.bgSunken },
-  orderText: { fontSize: font.xs, fontWeight: weight.black, color: colors.primary },
+  orderText: { fontSize: font.xs, fontWeight: weight.black, color: colors.primaryText },
   orderTextOff: { color: colors.textMuted },
   rowName: { fontSize: font.regular, fontWeight: weight.bold, color: colors.text },
-  scopeTag: { fontSize: font.micro, fontWeight: weight.heavy, letterSpacing: tracking.caps, marginTop: 1 },
+  scopeTag: { fontSize: font.xs, fontWeight: weight.semibold, marginTop: 2 },
   scopeShared: { color: colors.textMuted },
-  scopeMine: { color: colors.primary },
+  scopeMine: { color: colors.primaryText },
   rowNameOff: { color: colors.textMuted, textDecorationLine: 'line-through' },
 
   svcCard: { gap: spacing.md },
@@ -346,8 +300,5 @@ const styles = StyleSheet.create({
   },
   flagOnAccent: { backgroundColor: colors.accentSoft },
   flagOnSuccess: { backgroundColor: colors.successSoft },
-  flagText: { fontSize: font.xs, fontWeight: weight.bold, color: colors.textMuted },
-
-  hint: { flexDirection: 'row', alignItems: 'flex-start', gap: 7, paddingHorizontal: spacing.xs, marginTop: spacing.xs },
-  hintText: { flex: 1, fontSize: font.xs, color: colors.textMuted, lineHeight: 17 },
+  flagText: { fontSize: font.sm, fontWeight: weight.bold, color: colors.textMuted },
 });

@@ -1,6 +1,7 @@
 import React, { ReactNode } from 'react';
 import { View, StyleSheet, ViewStyle, StyleProp, TouchableOpacity } from 'react-native';
-import { colors, radii, spacing, shadow } from '../../theme';
+import { colors, radii, spacing, shadow, orgTheme } from '../../theme';
+import { useIsBranded } from './useIsStaff';
 
 type Elevation = 'none' | 'xs' | 'sm' | 'md' | 'lg';
 
@@ -22,6 +23,7 @@ type Props = {
 export default function Surface({
   children, elevation = 'sm', padded = true, radius = 'lg', style, onPress, tone, borderless,
 }: Props) {
+  const orgAdmin = useIsBranded();
   const pad = padded === false ? 0 : padded === 'sm' ? spacing.md : padded === 'lg' ? spacing.xl : spacing.lg;
 
   const base: StyleProp<ViewStyle> = [
@@ -33,6 +35,7 @@ export default function Surface({
       borderWidth: borderless ? 0 : StyleSheet.hairlineWidth,
     },
     shadow[elevation] as ViewStyle,
+    orgAdmin && !borderless ? { borderColor: orgTheme.border, borderWidth: 1, shadowColor: orgTheme.shadowColor, shadowOpacity: 0.09 } : null,
     style,
   ];
 

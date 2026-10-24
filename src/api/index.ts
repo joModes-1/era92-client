@@ -391,7 +391,7 @@ export const api = {
   listWashes: (params?: string) => req('GET', `/washes${params ? '?' + params : ''}`),
 
   // Reports
-  daily: (date: string, branch?: string) => req('GET', `/reports/daily?date=${date}${branch ? '&branch_id=' + branch : ''}`),
+  daily: (date: string, branch?: string, until?: string) => req('GET', `/reports/daily?date=${date}${branch ? '&branch_id=' + branch : ''}${until ? '&until=' + until : ''}`),
   workers: (from: string, to: string) => req('GET', `/reports/workers?from=${from}&to=${to}`),
   cashVariance: (from: string, to: string) => req('GET', `/reports/cash-variance?from=${from}&to=${to}`),
   handovers: (from: string, to: string) => req('GET', `/reports/handovers?from=${from}&to=${to}`),
@@ -507,6 +507,10 @@ export const api = {
   clientLoyalty: () => req('GET', '/me/washes/loyalty'),
   clientHistory: () => req('GET', '/me/washes/history'),
   clientActive: () => req('GET', '/me/washes/active'),
+  // Every live car, newest first. A client can have more than one: the two
+  // cars of a 2-for-1 booking, or a second car booked while the first is
+  // still being washed.
+  clientActiveList: () => req('GET', '/me/washes/active-list'),
   // Price list for the client's home screen — view-only, no branch_id on a
   // client's own token, so the server picks one (see the route comment).
   clientPrices: () => req('GET', '/me/washes/prices'),
@@ -549,15 +553,22 @@ export const api = {
     plate?: string;
     vehicle_color?: string;
     use_free_wash?: boolean;
-    use_promo?: boolean;
-    use_promo_free?: boolean;
     // Spend the client's points against this wash; deducted at booking.
     use_points?: boolean;
     declared_payment_method?: 'cash' | 'mtn' | 'airtel';
     declared_payment_phone?: string;
   }) => req('POST', '/me/washes', data),
-  // The home screen's promo card state: available / armed (next wash free)
-  // / used. One-time per client, enforced server-side by the database.
+  // "Wash 2 cars for the price of 1": one booking, two cars at one branch.
+  // The server charges the dearer car and makes the other free; points
+  // don't combine with it.
+  clientBookPromo: (data: {
+    branch_id: string;
+    cars: Array<{ vehicle_class_id: string; service_id?: string; plate?: string; vehicle_color?: string }>;
+    declared_payment_method?: 'cash' | 'mtn' | 'airtel';
+    declared_payment_phone?: string;
+  }) => req('POST', '/me/washes/promo', data),
+  // The home screen's promo card state: available, or used (taken the
+  // moment the pair is booked). One-time per client, enforced server-side.
   clientPromo: () => req('GET', '/me/washes/promo'),
   // Declares how the client intends to pay. Does NOT settle the wash and
   // does NOT charge anything — see PaymentMethodScreen.tsx for why.

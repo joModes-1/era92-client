@@ -14,9 +14,10 @@ import { cssGradientPoints } from '../utils/cssGradient';
  * gives identical results on both.
  */
 export default function CssGradient({
-  colors, locations, angle, style, children, width, height,
+  colors, locations, angle, style, children, width, height, pointerEvents,
 }: {
   colors: readonly string[];
+  pointerEvents?: 'none' | 'auto';
   locations?: readonly number[];
   angle: number;
   style?: StyleProp<ViewStyle>;
@@ -38,6 +39,7 @@ export default function CssGradient({
       start={start}
       end={end}
       onLayout={onLayout}
+      pointerEvents={pointerEvents}
       style={style}
     >
       {children}

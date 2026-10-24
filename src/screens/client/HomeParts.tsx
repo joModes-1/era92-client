@@ -103,8 +103,12 @@ export function RewardsBanner({
   amount?: string;
 }) {
   const at = amount ? headline.indexOf(amount) : -1;
+  // The lead-in and the coloured run are two separate text boxes in a row,
+  // and a trailing space at the end of a box is dropped when it is laid out
+  // ("Get up to200K"). So the space is trimmed off here and the row's own
+  // gap (rewardHeadlineGap) does the spacing instead.
   const parts = at >= 0
-    ? [headline.slice(0, at), headline.slice(at)]
+    ? [headline.slice(0, at).trimEnd(), headline.slice(at)]
     : null;
 
   return (
@@ -131,8 +135,8 @@ export function RewardsBanner({
             <Text style={s.rewardLabel} numberOfLines={1}>Points by wash</Text>
           </View>
           {parts ? (
-            <View style={s.rewardHeadlineRow}>
-              <Text style={s.rewardHeadlineLead} numberOfLines={1}>{parts[0]}</Text>
+            <View style={[s.rewardHeadlineRow, s.rewardHeadlineGap]}>
+              {parts[0] ? <Text style={s.rewardHeadlineLead} numberOfLines={1}>{parts[0]}</Text> : null}
               <GradientText
                 text={parts[1]}
                 style={s.rewardHeadline}
@@ -281,37 +285,50 @@ export function ServiceTile({
   selected?: boolean;
 }) {
   const art = artFor(name);
+  // The render is sized in px from the block's measured width. A % width
+  // alone is not enough: an Image with no explicit height falls back to its
+  // file's natural height (264px for the cars), and `contain` then floats
+  // the picture up inside that tall box — a full row above its tile.
+  const [blockW, setBlockW] = React.useState(0);
+  const artW = (blockW * TILE_ART_WIDTH * (art.tileScale ?? 1)) / 100;
+  const artH = artW / TILE_ART_ASPECT;
   return (
     <TouchableOpacity
       onPress={onPress}
       activeOpacity={0.85}
       style={[s.tile, selected && s.tileSelected]}
+      accessibilityRole="button"
+      accessibilityLabel={meta ? `${name}, ${meta}` : name}
     >
-      {/* The artwork owns the top half of the tile, centred — in the mockup
-          the vehicle is the thing you recognise, not the label. Both
-          overhanging badges anchor to this pill, not the tile — there is
-          no card edge left for them to pin to. */}
-      <View style={[s.tileArt, selected && s.tileArtSelected]}>
+      {/* The mockup's tile: a rounded grey block with the vehicle standing on
+          its floor and rising out of the top — the vehicle is the thing you
+          recognise, not the label. Both overhanging badges anchor to this
+          block's top-right corner. */}
+      <View
+        style={[s.tileArt, selected && s.tileArtSelected]}
+        onLayout={(e) => setBlockW(e.nativeEvent.layout.width)}
+      >
         {art.image ? (
-          <Image
-            source={art.image}
-            style={[
-              s.tileArtImage,
-              art.flip && { transform: [{ scaleX: -1 }] },
-              art.sizeDelta ? { width: 76 + art.sizeDelta, height: 76 + art.sizeDelta, marginLeft: -38 - art.sizeDelta / 2 } : null,
-              art.offsetY ? { top: -31 + art.offsetY } : null,
-            ]}
-            resizeMode="contain"
-          />
+          blockW > 0 ? (
+            <Image
+              source={art.image}
+              style={[
+                s.tileArtImage,
+                { width: artW, height: artH, left: (blockW - artW) / 2, bottom: art.tileBottom ?? 0 },
+                art.flip && { transform: [{ scaleX: -1 }] },
+              ]}
+              resizeMode="contain"
+            />
+          ) : null
         ) : (
-          <Icon name={art.icon} size={40} color={colors.ink[400]} />
+          <Icon name={art.icon} size={32} color={colors.ink[400]} />
         )}
         {/* Badges render after the art so they paint on top of it. */}
         {pointsBadge ? (
           <LinearGradient
             colors={colors.rewardIconGradient}
-            start={colors.rewardIconGradientStart}
-            end={colors.rewardIconGradientEnd}
+            start={{ x: 0, y: 0.5 }}
+            end={{ x: 1, y: 0.5 }}
             style={s.tileFloatPill}
           >
             <Text style={s.tileFloatPillText}>{pointsBadge}</Text>
@@ -323,13 +340,28 @@ export function ServiceTile({
         ) : null}
       </View>
 
-      <Text style={s.tileName} numberOfLines={1}>
-        {name}
-        {meta ? <Text style={s.tileMeta}>{`  •  ${meta}`}</Text> : null}
-      </Text>
+      {/* The name sits in a tab cut into the block's bottom edge, painted
+          the page colour — the mockup's notch. Drawn after the block, so it
+          also covers the bottom of the render, as the wheels are there. */}
+      <View style={s.tileLabelTab}>
+        <Text style={s.tileName} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.85}>
+          {name}
+          {meta ? (
+            <>
+              {'  •  '}
+              <Text style={s.tileMeta}>{meta}</Text>
+            </>
+          ) : null}
+        </Text>
+      </View>
     </TouchableOpacity>
   );
 }
+
+/** Width of a tile's render as a % of the tile, before its own tileScale. */
+const TILE_ART_WIDTH = 80;
+/** Width ÷ height of the box a tile's render is fitted (contain) into. */
+const TILE_ART_ASPECT = 1.29;
 
 /** The wide orange call to action that starts a job by scanning. */
 export function ScanBar({ onPress, onManual }: { onPress: () => void; onManual: () => void }) {
@@ -472,68 +504,49 @@ export function SuccessToast({
 
 /**
  * The promotional card that closes the page — "wash 2 cars for the price of
- * 1", now a real one-time offer rather than decoration:
+ * 1", a real one-time offer rather than decoration:
  *
- *  - `available` (default): grab it → booking flow with the offer attached;
- *    after the paid wash settles, the next one is free.
- *  - `armed`: grabbed and paid, waiting to be spent — the CTA becomes
- *    "Book your free wash" and the card stays tappable.
- *  - `used`: spent — the card goes grey and inert, but stays on the page
- *    so the layout never jumps and the offer doesn't read as a glitch.
+ *  - `available` (default): "Grab offer" → one booking with two cars, the
+ *    dearer one charged and the other free.
+ *  - `used`: taken — the card goes grey and inert, but stays on the page so
+ *    the layout never jumps and the offer doesn't read as a glitch.
  */
 export function PromoCard({
   onPress, state = 'available',
 }: {
   onPress: () => void;
-  state?: 'available' | 'armed' | 'used';
+  state?: 'available' | 'used';
 }) {
   const used = state === 'used';
+  // Used keeps the card's full colour (the owner's call): the offer stays
+  // part of the page's look. Only the button changes, and a tap explains
+  // instead of booking — the caller's onPress handles that case.
   return (
     <TouchableOpacity
       onPress={onPress}
       activeOpacity={0.9}
-      disabled={used}
+      accessibilityRole="button"
+      accessibilityLabel={used ? 'Wash 2 cars offer, already used' : 'Wash 2 cars for the price of 1, grab offer'}
     >
       <LinearGradient
-        colors={used
-          ? [colors.bgSunken, colors.bgSunken]
-          : colors.gradientBrandDeep}
+        colors={colors.gradientBrandDeep}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={s.promo}
       >
         <View style={{ flex: 1 }}>
-          {state === 'armed' ? (
-            <>
-              <Text style={s.promoLine}>YOUR NEXT WASH</Text>
-              <View style={s.promoRow}>
-                <Text style={s.promoLine}>Is</Text>
-                <O1Badge size={24} />
-                <Text style={s.promoLine}>FREE</Text>
-              </View>
-              <View style={[s.promoCta, used && s.promoCtaUsed]}>
-                <Text style={s.promoCtaText}>Book your free wash</Text>
-              </View>
-            </>
-          ) : (
-            <>
-              <Text style={[s.promoLine, used && s.promoLineUsed]}>WASH 2 CARS</Text>
-              <View style={s.promoRow}>
-                <Text style={[s.promoLine, used && s.promoLineUsed]}>For</Text>
-                <O1Badge size={24} />
-                <Text style={[s.promoLine, used && s.promoLineUsed]}>price</Text>
-              </View>
-              <View style={[s.promoCta, used && s.promoCtaUsed]}>
-                <Text style={s.promoCtaText}>{used ? 'Offer already used' : 'Grab offer'}</Text>
-              </View>
-            </>
-          )}
+          <Text style={s.promoLine}>WASH 2 CARS</Text>
+          <View style={s.promoRow}>
+            <Text style={s.promoLine}>For</Text>
+            <O1Badge size={24} />
+            <Text style={s.promoLine}>price</Text>
+          </View>
+          <View style={[s.promoCta, used && s.promoCtaUsed]}>
+            {used ? <Icon name="check" size={10} color="#fff" /> : null}
+            <Text style={s.promoCtaText}>{used ? 'Offer already used' : 'Grab offer'}</Text>
+          </View>
         </View>
-        <Icon
-          name={used ? 'check-circle' : 'car'}
-          size={44}
-          color={used ? 'rgba(0,0,0,0.25)' : 'rgba(255,255,255,0.9)'}
-        />
+        <Icon name="car" size={44} color="rgba(255,255,255,0.9)" />
       </LinearGradient>
     </TouchableOpacity>
   );
@@ -618,6 +631,8 @@ const s = StyleSheet.create({
     alignItems: 'baseline',
     marginTop: 2,
   },
+  // About one word-space at this size (font.xl).
+  rewardHeadlineGap: { gap: 5 },
   rewardHeadline: {
     fontSize: font.xl,
     fontWeight: weight.black,
@@ -643,79 +658,81 @@ const s = StyleSheet.create({
   },
 
   // ── Service tiles ──
-  // Two per row: 48% leaves room for the gap between them, and the tiles
-  // wrap into a 2x2 rather than being squeezed into a single row. No card
-  // background or border on the tile itself — the mockup has no box around
-  // the whole tile, only a pill-shaped tint sitting behind the vehicle art
-  // (`tileArt` below); the label floats on the plain page background.
+  // Measured off the mockup's tile grid: two narrower columns with a wide
+  // gutter between them (the grid is inset from the page edge — see
+  // ClientHome's tileGrid), each tile a rounded grey block about three times
+  // as wide as it is tall, the vehicle standing on its floor and rising out
+  // of the top, the name in a page-coloured tab notched into the bottom
+  // edge. No card or border around the tile itself.
+  //
+  // paddingTop is the headroom the render rises into above the block, so
+  // the second row's vehicles never reach the first row's names.
   tile: {
-    width: '48%',
-    paddingTop: spacing.xl,
+    width: '43%',
+    paddingTop: 40,
     marginBottom: spacing.sm,
   },
   // A selected tile still needs a visible state without the tile becoming
-  // a box — a ring around the art's own pill reads as "chosen" without
-  // introducing the card edge the design doesn't have.
+  // a box — the block's own tint changes instead (tileArtSelected).
   tileSelected: {},
-  // The rounded tint sits behind the art only, not the label — its own
-  // element, not the tile's background, and sized to leave room for the
-  // "With points" pill to overhang its top edge without clipping.
   // `overflow: visible` (the default, stated for clarity) is what lets the
-  // vehicle image below bleed past this pill's own edge, per the mockup —
-  // the render is drawn larger than the tint it sits on, not fitted inside
-  // it.
+  // render and the badges spill past the block's edges, as in the mockup.
   tileArt: {
-    height: 45,
-    marginTop: 6,
-    marginBottom: spacing.sm,
-    borderRadius: radii.xl,
+    width: '100%',
+    aspectRatio: 3,
+    borderRadius: 18,
     backgroundColor: colors.bgSunken,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'visible',
   },
   tileArtSelected: { backgroundColor: colors.primarySoft },
-  // Fixed pixel size, not a percentage of the pill — a percentage shrinks
-  // in lockstep with the pill itself, which is what kept the render
-  // "fitting" no matter how small tileArt's own height got. A flat size
-  // held constant against a 45px-tall pill is what actually overflows it,
-  // the way the mockup's renders spill past their own rounded shape rather
-  // than sitting fitted inside it. Bottom-aligned to the pill (top is
-  // 45 - 76) so all of the overflow goes up, away from the label below —
-  // overflowing down was crowding into that text instead.
-  tileArtImage: {
-    position: 'absolute',
-    top: -31,
-    left: '50%',
-    marginLeft: -38,
-    width: 76,
-    height: 76,
-  },
-  // One floating pill style for both "With points" and "New": pinned only
-  // by top/right (never left too — on react-native-web pinning both edges
-  // stretches it full width), so it sizes to its text and floats above the
-  // art's top-right corner as in the mockup.
+  // Anchored to the block's floor (bottom), sized in px from the block's
+  // width (set per render in ServiceTile). Anchoring by the bottom is what
+  // stands every vehicle on the same floor whatever its height; overflow
+  // then all goes upward.
+  tileArtImage: { position: 'absolute' },
+  // "With points" / "New": on the block's top-right corner, mostly above
+  // the top edge and just past the right one. Pinned only by top/right
+  // (never left too — on react-native-web pinning both edges stretches it
+  // full width), so it sizes to its text.
   tileFloatPill: {
     position: 'absolute',
-    top: -14,
-    right: 6,
+    top: -20,
+    right: -10,
     zIndex: 3,
     borderRadius: radii.sm,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
   },
   tileFloatPillText: {
-    fontSize: font.micro,
-    fontWeight: weight.semibold,
+    fontSize: font.sm,
+    fontWeight: weight.medium,
     color: '#fff',
   },
+  // The notch: the page background (colors.bg, ClientHome's own) with
+  // rounded top corners, pulled up over the block's bottom edge. It covers
+  // the bottom of the render too, which is where the mockup's wheels go.
+  tileLabelTab: {
+    alignSelf: 'center',
+    maxWidth: '100%',
+    marginTop: -9,
+    backgroundColor: colors.bg,
+    borderTopLeftRadius: 10,
+    borderTopRightRadius: 10,
+    paddingHorizontal: spacing.sm + 2,
+    paddingTop: 4,
+  },
+  // The "•" before a meta line inherits this — dark, as in the mockup —
+  // and only the meta itself ("30 mins") is grey.
   tileName: {
-    fontSize: font.sm,
+    fontSize: 13,
     fontWeight: weight.medium,
     color: colors.text,
     textAlign: 'center',
   },
-  tileMeta: { fontSize: font.xs, fontWeight: weight.regular, color: colors.textMuted },
+  tileMeta: { fontSize: font.sm, fontWeight: weight.regular, color: colors.textMuted },
+
 
   // ── Wash tracker ──
   trackWrap: { height: 30, justifyContent: 'center', marginHorizontal: 9 },
@@ -883,10 +900,10 @@ const s = StyleSheet.create({
     color: '#fff',
     letterSpacing: tracking.tight,
   },
-  // Ink colour flips with the card: white on the dark gradient, muted ink
-  // when the card is greyed out in its 'used' state.
-  promoLineUsed: { color: colors.textMuted },
   promoCta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
     alignSelf: 'flex-start',
     backgroundColor: 'rgba(255,255,255,0.18)',
     borderRadius: radii.full,
@@ -894,10 +911,12 @@ const s = StyleSheet.create({
     paddingVertical: 6,
     marginTop: spacing.md,
   },
-  // The inert 'used' state: the CTA pill keeps its shape but reads as
-  // spent — darker fill, muted text — rather than still being tappable.
+  // The 'used' state keeps the card's colour; only the button reads as
+  // spent — an outline instead of a fill, with a tick before the words.
   promoCtaUsed: {
-    backgroundColor: 'rgba(0,0,0,0.08)',
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.45)',
   },
   promoCtaText: { fontSize: font.xs, fontWeight: weight.bold, color: '#fff' },
 });

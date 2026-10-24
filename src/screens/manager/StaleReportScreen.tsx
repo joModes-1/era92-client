@@ -1,10 +1,9 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View } from 'react-native';
 import { api } from '../../api';
-import { colors, font, spacing, weight, tracking, radii } from '../../theme';
+import { colors, spacing } from '../../theme';
 import { ReportScreen } from './reportHelpers';
-import { Surface, SectionHeader, EmptyState, ListRow } from '../../components/ui';
-import Badge from '../../components/Badge';
+import { Surface, SectionHeader, EmptyState, ListRow, NoticeRow } from '../../components/ui';
 
 /** Escalating urgency by wait time — colour carries the severity. */
 function urgency(mins: number) {
@@ -42,13 +41,13 @@ export default function StaleReportScreen() {
 
         return (
           <View style={{ gap: spacing.lg }}>
-            {/* Alert banner sets the tone before any list */}
-            <Surface elevation="sm" tone={colors.errorSoft} borderless style={styles.banner}>
-              <View style={styles.bannerDot} />
-              <Text style={styles.bannerText}>
-                {total} job{total === 1 ? '' : 's'} need{total === 1 ? 's' : ''} attention right now
-              </Text>
-            </Surface>
+            {/* The banner sets the tone before any list */}
+            <NoticeRow
+              tone="error"
+              icon="hourglass-half"
+              title={`${total} job${total === 1 ? '' : 's'} need${total === 1 ? 's' : ''} attention right now`}
+              subtitle="Over 30 minutes is overdue; over an hour is critical."
+            />
 
             {ready.length > 0 && (
               <View>
@@ -108,8 +107,4 @@ export default function StaleReportScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  banner: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  bannerDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.error },
-  bannerText: { flex: 1, fontSize: font.sm, fontWeight: weight.bold, color: colors.error, letterSpacing: 0.1 },
-});
+

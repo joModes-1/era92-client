@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, RefreshControl } from 'react-native';
 import { api } from '../../api';
-import { colors, radii, font, spacing, weight, tracking } from '../../theme';
+import { colors, radii, font, spacing, weight, tracking, orgBg } from '../../theme';
 import Icon from '../../components/Icon';
 import ScreenHeader, { HeaderAction } from '../../components/ScreenHeader';
 import Badge from '../../components/Badge';
@@ -63,7 +63,7 @@ export default function BranchesScreen() {
 
   if (!loaded) {
     return (
-      <View style={styles.container}>
+      <View style={[styles.container, orgBg()]}>
         <ScreenHeader title="Branches" />
         <ScrollView contentContainerStyle={styles.body}><SkeletonList rows={3} showHeader={false} /></ScrollView>
       </View>
@@ -73,7 +73,7 @@ export default function BranchesScreen() {
   const active = branches.filter((b: any) => b.status === 'active').length;
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, orgBg()]}>
       <ScreenHeader
         title="Branches"
         subtitle={`${active} active of ${branches.length}`}

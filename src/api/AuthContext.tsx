@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { api, setTokens, clearTokens, loadTokens, getActor, setActor, setSessionExpiredHandler } from './index';
+import { orgMode } from '../theme';
 
 interface AuthCtx {
   actor: any;
@@ -13,6 +14,7 @@ const Ctx = createContext<AuthCtx>(null!);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [actor, setActorState] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  orgMode.on = actor?.role === 'orgadmin' || actor?.role === 'worker';
 
   useEffect(() => {
     (async () => {

@@ -1,12 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Switch, TextInput } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TextInput } from 'react-native';
 import { api } from '../../api';
-import { colors, radii, font, spacing, weight, tracking } from '../../theme';
-import Icon from '../../components/Icon';
+import { colors, radii, font, spacing, weight, noFocusRing, orgBg } from '../../theme';
 import ScreenHeader from '../../components/ScreenHeader';
 import GradientButton from '../../components/GradientButton';
 import { useAppAlert } from '../../components/AppAlert';
-import { Surface, SectionHeader, Field, SkeletonList } from '../../components/ui';
+import { Surface, SectionHeader, Field, SkeletonList, Hint, Toggle } from '../../components/ui';
 
 /**
  * The owner's points settings — both schemes on one screen:
@@ -105,7 +104,7 @@ export default function PointsSettingsScreen() {
 
   if (!loaded) {
     return (
-      <View style={styles.container}>
+      <View style={[styles.container, orgBg()]}>
         <ScreenHeader title="Points Settings" />
         <ScrollView contentContainerStyle={styles.body}><SkeletonList rows={4} /></ScrollView>
       </View>
@@ -116,7 +115,7 @@ export default function PointsSettingsScreen() {
   const sampleClient = clientRows.find((r) => r.earns_point && toInt(r.points) > 0);
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, orgBg()]}>
       <ScreenHeader title="Points Settings" subtitle="What each wash gives, and what a point is worth" />
 
       <ScrollView style={styles.scroll} contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
@@ -129,7 +128,7 @@ export default function PointsSettingsScreen() {
                 <Text style={styles.toggleTitle}>Clients earn and spend points</Text>
                 <Text style={styles.toggleSub}>Switch off to pause the scheme. Balances are kept.</Text>
               </View>
-              <Switch value={clientOn} onValueChange={setClientOn} trackColor={{ false: colors.border, true: colors.primary }} thumbColor="#fff" />
+              <Toggle value={clientOn} onValueChange={setClientOn} accessibilityLabel="Clients earn and spend points" />
             </View>
 
             <Field
@@ -143,20 +142,20 @@ export default function PointsSettingsScreen() {
                 : 'Set 0 to let clients collect points before they can spend them.'}
             />
 
-            <Text style={styles.tableHead}>POINTS PER WASH TYPE</Text>
+            <Text style={styles.tableHead}>Points per wash type</Text>
             {clientRows.map((r, i) => (
               <View key={r.id} style={[styles.row, i === clientRows.length - 1 && styles.rowLast]}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.rowName}>{r.name}</Text>
                   {r.branch_name ? <Text style={styles.rowScope}>{r.branch_name} only</Text> : null}
                 </View>
-                <Switch
+                <Toggle
                   value={r.earns_point}
                   onValueChange={(v) => setClientRows((rows) => rows.map((x) => (x.id === r.id ? { ...x, earns_point: v } : x)))}
-                  trackColor={{ false: colors.border, true: colors.primary }}
-                  thumbColor="#fff"
+                  accessibilityLabel={`${r.name} earns points`}
                 />
                 <TextInput
+                  accessibilityLabel={`Points for ${r.name}`}
                   style={[styles.pointsInput, !r.earns_point && styles.pointsInputOff]}
                   editable={r.earns_point}
                   keyboardType="numeric"
@@ -180,7 +179,7 @@ export default function PointsSettingsScreen() {
                 <Text style={styles.toggleTitle}>Workers earn points</Text>
                 <Text style={styles.toggleSub}>Points rank the leaderboard and decide who gets a car first.</Text>
               </View>
-              <Switch value={workerOn} onValueChange={setWorkerOn} trackColor={{ false: colors.border, true: colors.primary }} thumbColor="#fff" />
+              <Toggle value={workerOn} onValueChange={setWorkerOn} accessibilityLabel="Workers earn points" />
             </View>
 
             <Field
@@ -192,7 +191,7 @@ export default function PointsSettingsScreen() {
               hint="What a worker's points are worth, shown on their account."
             />
 
-            <Text style={styles.tableHead}>POINTS THE WORKER EARNS</Text>
+            <Text style={styles.tableHead}>Points the worker earns</Text>
             {workerRows.map((r, i) => (
               <View key={r.id} style={[styles.row, i === workerRows.length - 1 && styles.rowLast]}>
                 <View style={{ flex: 1 }}>
@@ -200,6 +199,7 @@ export default function PointsSettingsScreen() {
                   {r.branch_name ? <Text style={styles.rowScope}>{r.branch_name} only</Text> : null}
                 </View>
                 <TextInput
+                  accessibilityLabel={`Worker points for ${r.name}`}
                   style={styles.pointsInput}
                   keyboardType="numeric"
                   value={r.points}
@@ -213,12 +213,9 @@ export default function PointsSettingsScreen() {
           </Surface>
         </View>
 
-        <View style={styles.note}>
-          <Icon name="info-circle" size={11} color={colors.textMuted} />
-          <Text style={styles.noteText}>
-            Each wash keeps the numbers it was booked with, so changes here apply to new bookings only.
-          </Text>
-        </View>
+        <Hint>
+          Each wash keeps the numbers it was booked with, so changes here apply to new bookings only.
+        </Hint>
       </ScrollView>
     </View>
   );
@@ -229,25 +226,27 @@ const styles = StyleSheet.create({
   scroll: { flex: 1 },
   body: { padding: spacing.lg, paddingBottom: spacing.xxxl, gap: spacing.lg },
 
-  toggleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginBottom: spacing.lg },
+  toggleRow: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.md,
+    marginBottom: spacing.lg, paddingBottom: spacing.lg,
+    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.borderLight,
+  },
   toggleTitle: { fontSize: font.regular, fontWeight: weight.bold, color: colors.text },
-  toggleSub: { fontSize: font.xs, color: colors.textSecondary, marginTop: 2 },
+  toggleSub: { fontSize: font.sm, color: colors.textSecondary, marginTop: 2, lineHeight: 17 },
 
-  tableHead: { fontSize: font.micro, fontWeight: weight.heavy, color: colors.textMuted, letterSpacing: tracking.capsWide, marginBottom: spacing.xs },
+  tableHead: { fontSize: font.sm, fontWeight: weight.bold, color: colors.text, marginBottom: spacing.xs },
   row: {
     flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
-    paddingVertical: spacing.sm, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border,
+    paddingVertical: spacing.sm, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.borderLight,
   },
   rowLast: { borderBottomWidth: 0 },
-  rowName: { fontSize: font.sm, fontWeight: weight.semibold, color: colors.text },
+  rowName: { fontSize: font.regular, fontWeight: weight.semibold, color: colors.text },
   rowScope: { fontSize: font.xs, color: colors.textMuted },
   pointsInput: {
-    width: 64, height: 36, borderRadius: radii.sm, borderWidth: 1, borderColor: colors.border,
-    backgroundColor: colors.bgCard, textAlign: 'center', fontSize: font.sm, fontWeight: weight.bold, color: colors.text,
+    width: 64, height: 38, borderRadius: radii.sm, borderWidth: 1.5, borderColor: colors.border,
+    backgroundColor: colors.bgCard, textAlign: 'center', fontSize: font.regular, fontWeight: weight.bold, color: colors.text,
+    ...noFocusRing,
   },
-  pointsInputOff: { backgroundColor: colors.bgSunken, color: colors.textMuted },
-  ptsLabel: { fontSize: font.xs, color: colors.textMuted, width: 22 },
-
-  note: { flexDirection: 'row', alignItems: 'flex-start', gap: 7, paddingHorizontal: spacing.xs },
-  noteText: { flex: 1, fontSize: font.xs, color: colors.textMuted, lineHeight: 17 },
+  pointsInputOff: { backgroundColor: colors.bgSunken, borderColor: colors.bgSunken, color: colors.textMuted },
+  ptsLabel: { fontSize: font.sm, color: colors.textMuted, width: 24 },
 });

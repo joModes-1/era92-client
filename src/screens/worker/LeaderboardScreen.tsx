@@ -1,17 +1,34 @@
 import React, { useCallback, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { api } from '../../api';
 import { useAuth } from '../../api/AuthContext';
-import { colors, radii, font, spacing, weight } from '../../theme';
+import { colors, radii, spacing, weight, staffType, staffText } from '../../theme';
 import { ReportScreen } from '../manager/reportHelpers';
 import Icon from '../../components/Icon';
-import { Surface, EmptyState, initials } from '../../components/ui';
+import { Surface, EmptyState, Avatar, Segmented } from '../../components/ui';
 
-/** Leaderboard — the branch's workers ranked by points earned this week, this month, or all time. */
+/**
+ * Leaderboard — the branch's workers ranked by points this week, this month,
+ * or all time.
+ *
+ * Relative, not a full table (STAFF-UI-SPEC.md §3): research on workplace
+ * leaderboards finds that showing people their neighbours motivates while a
+ * public bottom of the table demotivates (Duolingo leagues, relative
+ * leaderboard studies). So: your standing first, the top three, then the
+ * people just above and below you — never the whole tail.
+ */
 
 type Period = 'week' | 'month' | 'all';
 const LABEL: Record<Period, string> = { week: 'This week', month: 'This month', all: 'All time' };
-const MEDAL = ['#F5B300', '#A7AFC0', '#C9814B'];
+const RESETS: Record<Period, string> = {
+  week: 'A new week starts on Monday',
+  month: 'A new month starts on the 1st',
+  all: 'Every point you have earned',
+};
+// Gold, silver, bronze — each medal also carries its rank number beside it,
+// so the order never depends on telling the three metals apart.
+const MEDAL = ['#E0A100', '#9AA3B5', '#C27A45'];
 
 export default function LeaderboardScreen() {
   const { actor } = useAuth();
@@ -27,25 +44,44 @@ export default function LeaderboardScreen() {
       render={(rows) => {
         const list: any[] = (Array.isArray(rows) ? rows : []).filter((r) => Number(r.points) > 0 || r.id === actor?.id);
         const me = list.find((r) => r.id === actor?.id);
+
+        // Top three, then you and your neighbours; a gap marker between.
+        const shown = new Set<number>();
+        list.forEach((r, i) => { if (i < 3) shown.add(i); });
+        const meIndex = list.findIndex((r) => r.id === actor?.id);
+        if (meIndex >= 0) [meIndex - 1, meIndex, meIndex + 1].forEach((i) => { if (i >= 0 && i < list.length) shown.add(i); });
+        const indexes = [...shown].sort((a, b) => a - b);
+
         return (
           <View style={{ gap: spacing.lg }}>
-            <View style={styles.tabs}>
-              {(['week', 'month', 'all'] as Period[]).map((p) => (
-                <TouchableOpacity
-                  key={p}
-                  onPress={() => setPeriod(p)}
-                  style={[styles.tab, period === p && styles.tabOn]}
-                  activeOpacity={0.8}
-                >
-                  <Text style={[styles.tabText, period === p && styles.tabTextOn]}>{LABEL[p]}</Text>
-                </TouchableOpacity>
-              ))}
+            <View style={{ gap: spacing.sm }}>
+              <Segmented
+                options={(['week', 'month', 'all'] as Period[]).map((p) => ({ value: p, label: LABEL[p] }))}
+                value={period}
+                onChange={setPeriod}
+              />
+              <Text style={styles.resets}>{RESETS[period]}</Text>
             </View>
 
+            {/* Your own standing first — the question a worker opens this
+                screen to answer. */}
             {me ? (
-              <Text style={styles.meLine}>
-                You're <Text style={styles.strong}>#{me.rank}</Text> · {Number(me.points).toLocaleString()} pts · {Number(me.washes || 0)} cars
-              </Text>
+              // The My Points card's pink → peach wash, so standing and
+              // points read as one family.
+              <LinearGradient colors={['#FCE4F4', '#FFF1E8']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.meCard}>
+                <View>
+                  <Text style={styles.caption}>Your rank</Text>
+                  <Text style={styles.meRank}>#{me.rank}</Text>
+                </View>
+                <View style={styles.meFacts}>
+                  <Text style={styles.meValue}>{Number(me.points).toLocaleString()}</Text>
+                  <Text style={styles.meLabel}>points</Text>
+                </View>
+                <View style={styles.meFacts}>
+                  <Text style={styles.meValue}>{Number(me.washes || 0).toLocaleString()}</Text>
+                  <Text style={styles.meLabel}>cars</Text>
+                </View>
+              </LinearGradient>
             ) : null}
 
             {list.length === 0 ? (
@@ -54,24 +90,27 @@ export default function LeaderboardScreen() {
               </Surface>
             ) : (
               <Surface elevation="sm" padded="sm">
-                {list.map((r: any, i: number) => {
+                {indexes.map((idx, k) => {
+                  const r = list[idx];
                   const mine = r.id === actor?.id;
+                  const medal = r.rank <= 3 && Number(r.points) > 0;
+                  const gap = k > 0 && idx - indexes[k - 1] > 1;
                   return (
-                    <View key={r.id} style={[styles.row, mine && styles.rowMe, i === list.length - 1 && { borderBottomWidth: 0 }]}>
-                      <View style={styles.rankBox}>
-                        {r.rank <= 3 && Number(r.points) > 0
-                          ? <Icon name="medal" size={15} color={MEDAL[r.rank - 1]} />
-                          : <Text style={styles.rank}>{r.rank}</Text>}
+                    <React.Fragment key={r.id}>
+                      {gap ? <Text style={styles.gap}>···</Text> : null}
+                      <View style={[styles.row, mine && styles.rowMe]}>
+                        <View style={styles.rankBox}>
+                          {medal ? <Icon name="medal" size={17} color={MEDAL[r.rank - 1]} /> : null}
+                          <Text style={styles.rank}>{r.rank}</Text>
+                        </View>
+                        <Avatar name={r.full_name} size={36} variant={mine ? 'solid' : 'soft'} />
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.name} numberOfLines={1}>{mine ? 'You' : r.full_name}</Text>
+                          <Text style={styles.meta}>{Number(r.washes || 0).toLocaleString()} cars</Text>
+                        </View>
+                        <Text style={styles.points}>{Number(r.points).toLocaleString()}</Text>
                       </View>
-                      <View style={[styles.avatar, mine && styles.avatarMe]}>
-                        <Text style={[styles.initials, mine && { color: '#fff' }]}>{initials(r.full_name)}</Text>
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.name} numberOfLines={1}>{mine ? 'You' : r.full_name}</Text>
-                        <Text style={styles.meta}>{Number(r.washes || 0)} cars</Text>
-                      </View>
-                      <Text style={styles.points}>{Number(r.points).toLocaleString()} pts</Text>
-                    </View>
+                    </React.Fragment>
                   );
                 })}
               </Surface>
@@ -84,25 +123,24 @@ export default function LeaderboardScreen() {
 }
 
 const styles = StyleSheet.create({
-  tabs: { flexDirection: 'row', backgroundColor: colors.bgSunken, borderRadius: 999, padding: 4 },
-  tab: { flex: 1, paddingVertical: 8, borderRadius: 999, alignItems: 'center' },
-  tabOn: { backgroundColor: colors.bgCard },
-  tabText: { fontSize: font.sm, fontWeight: weight.bold, color: colors.textSecondary },
-  tabTextOn: { color: '#AC00FF' },
-  meLine: { fontSize: font.sm, color: colors.textSecondary, textAlign: 'center' },
-  strong: { fontWeight: weight.heavy, color: colors.text },
+  resets: { ...staffType.meta, textAlign: 'center' },
+  caption: { ...staffType.caption, color: staffText.secondary },
+
+  meCard: { flexDirection: 'row', alignItems: 'flex-end', gap: spacing.xl, padding: spacing.lg, borderRadius: radii.xl },
+  meRank: { ...staffType.hero, color: colors.primaryText },
+  meFacts: { flex: 1, paddingBottom: 4 },
+  meValue: { ...staffType.figure },
+  meLabel: { ...staffType.meta },
+
   row: {
-    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
-    paddingVertical: spacing.sm, paddingHorizontal: spacing.sm,
-    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border,
+    flexDirection: 'row', alignItems: 'center', gap: spacing.md,
+    paddingVertical: spacing.sm + 2, paddingHorizontal: spacing.sm, minHeight: 56,
   },
-  rowMe: { backgroundColor: '#FAF7FF', borderRadius: radii.md },
-  rankBox: { width: 22, alignItems: 'center' },
-  rank: { fontSize: font.sm, fontWeight: weight.heavy, color: colors.textMuted },
-  avatar: { width: 34, height: 34, borderRadius: 17, backgroundColor: '#F4ECFF', alignItems: 'center', justifyContent: 'center' },
-  avatarMe: { backgroundColor: '#AC00FF' },
-  initials: { fontSize: font.micro, fontWeight: weight.black, color: '#AC00FF' },
-  name: { fontSize: font.sm, fontWeight: weight.bold, color: colors.text },
-  meta: { fontSize: font.micro, color: colors.textMuted, marginTop: 1 },
-  points: { fontSize: font.sm, fontWeight: weight.heavy, color: colors.text },
+  rowMe: { backgroundColor: colors.primarySoft, borderRadius: radii.md },
+  rankBox: { width: 40, flexDirection: 'row', alignItems: 'center', gap: 4 },
+  rank: { ...staffType.label, ...staffType.tabular, color: staffText.secondary },
+  name: { ...staffType.rowTitle, fontSize: 16 },
+  meta: { ...staffType.meta },
+  points: { ...staffType.label, ...staffType.tabular, fontWeight: weight.bold },
+  gap: { ...staffType.label, color: staffText.muted, textAlign: 'center', paddingVertical: 2 },
 });
