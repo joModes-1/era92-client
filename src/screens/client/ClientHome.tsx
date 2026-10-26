@@ -408,11 +408,12 @@ export default function ClientHome({ navigation }: any) {
         visible={!!promptWash}
         wash={promptWash}
         onClose={dismissPrompt}
-        onDone={(method, receiptNo) => {
+        onWaiting={() => promptWash && setForcePromptId(promptWash.id)}
+        onDone={(method, receiptNo, paid) => {
           const wash = { ...promptWash, receipt_no: receiptNo || promptWash?.receipt_no };
           dismissPrompt();
           load();
-          navigation.navigate('PaymentSuccess', { wash, method });
+          navigation.navigate('PaymentSuccess', { wash, method, paid });
         }}
       />
 

@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, Image, StyleSheet, TouchableOpacity, TextInput } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { View, Text, Image, StyleSheet, TouchableOpacity, TextInput, Linking } from 'react-native';
 import { api } from '../../api';
 import { colors, radii, font, spacing, weight, noFocusRing } from '../../theme';
 import ComponentButton1 from '../../components/buttons/ComponentButton1';
@@ -11,26 +11,57 @@ type Method = 'mtn' | 'airtel' | 'cash';
 
 /**
  * Two-step sheet shown right after booking: "Pay UGX X" prompt, then the
- * payment-method picker. Submitting only records the client's declared
- * method (POST /payment-intent) — no money moves; a worker confirms at the bay.
+ * payment-method picker.
+ *
+ * Cash only records the client's declared method (POST /payment-intent) — a
+ * worker collects it at the bay. MTN and Airtel go through PesaPal: the app
+ * opens PesaPal's checkout page, the client pays there, and this sheet waits
+ * for the server to confirm it (the server asks PesaPal itself).
  */
 export default function PaymentPromptSheet({
-  visible, wash, onClose, onDone,
+  visible, wash, onClose, onDone, onWaiting,
 }: {
   visible: boolean;
   wash: any;
   onClose: () => void;
-  onDone: (method: Method, receiptNo?: string) => void;
+  onDone: (method: Method, receiptNo?: string, paid?: boolean) => void;
+  /** Called when a PesaPal payment has started, so the screen keeps this sheet up while it waits. */
+  onWaiting?: () => void;
 }) {
   const [step, setStep] = useState<'prompt' | 'method'>('prompt');
   const [method, setMethod] = useState<Method>('mtn');
   const [phone, setPhone] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  // Set once PesaPal's page has been opened: the payment we are waiting on.
+  const [awaiting, setAwaiting] = useState<{ id: string; url: string; receipt?: string } | null>(null);
+  const finished = useRef(false);
+  // The screen may hide and re-show this sheet while PesaPal's page is open
+  // (it re-reads the booking); a payment in flight must survive that.
+  const waitingRef = useRef(false);
+  waitingRef.current = !!awaiting;
 
   useEffect(() => {
-    if (visible) { setStep('prompt'); setError(''); }
+    if (visible && !waitingRef.current) { setStep('prompt'); setError(''); setAwaiting(null); finished.current = false; }
   }, [visible]);
+
+  const close = () => { setAwaiting(null); onClose(); };
+
+  const checkPayment = async (quiet = false) => {
+    if (!awaiting || finished.current) return;
+    try {
+      const p: any = await api.getPayment(awaiting.id);
+      if (p?.status === 'succeeded') { finished.current = true; onDone(method, awaiting.receipt, true); }
+      else if (p?.status === 'failed' && !quiet) { setAwaiting(null); setError('The payment did not go through. You have not been charged. Try again.'); }
+    } catch { /* keep waiting; the next check retries */ }
+  };
+
+  // While the PesaPal page is open elsewhere, ask the server every few seconds.
+  useEffect(() => {
+    if (!awaiting) return;
+    const t = setInterval(() => checkPayment(true), 3000);
+    return () => clearInterval(t);
+  }, [awaiting]);
 
   // What is still owed after any points spent at booking.
   const amount = Number(wash?.amount_due_ugx ?? wash?.quoted_amount_ugx ?? 0).toLocaleString();
@@ -46,6 +77,15 @@ export default function PaymentPromptSheet({
         method,
         phone: needsPhone ? `+256${phone.replace(/\D/g, '').replace(/^0/, '')}` : undefined,
       });
+      if (needsPhone) {
+        const local = phone.replace(/D/g, '').replace(/^0/, '');
+        const p: any = await api.startPayment(wash.id, `0${local}`);
+        setAwaiting({ id: p.payment_id, url: p.redirect_url, receipt: res?.receipt_no });
+        onWaiting?.();
+        Linking.openURL(p.redirect_url).catch(() => setError('Could not open the payment page. Tap "Open payment page".'));
+        setSubmitting(false);
+        return;
+      }
       onDone(method, res?.receipt_no);
     } catch (e: any) {
       setError(e.message || 'Could not record your payment method. Try again.');
@@ -54,8 +94,8 @@ export default function PaymentPromptSheet({
   };
 
   return (
-    <Sheet visible={visible} onClose={onClose}>
-      <TouchableOpacity onPress={onClose} hitSlop={12} style={s.close} activeOpacity={0.6}>
+    <Sheet visible={visible} onClose={close}>
+      <TouchableOpacity onPress={close} hitSlop={12} style={s.close} activeOpacity={0.6}>
         <Text style={s.closeText}>Close</Text>
       </TouchableOpacity>
 
@@ -101,15 +141,24 @@ export default function PaymentPromptSheet({
 
           {error ? <Text style={s.error}>{error}</Text> : null}
 
+          {awaiting ? (
+            <View style={{ marginTop: spacing.lg, gap: spacing.md }}>
+              <Text style={s.waiting}>Waiting for your payment… finish it on the PesaPal page, then come back here.</Text>
+              <ComponentButton1 title="I've paid — check now" onPress={() => checkPayment(false)} full />
+              <TouchableOpacity onPress={() => Linking.openURL(awaiting.url)} hitSlop={10} activeOpacity={0.6} style={{ alignItems: 'center' }}>
+                <Text style={s.closeText}>Open payment page</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
           <ComponentButton1
-            title={`Pay UGX ${amount}`}
+            title={needsPhone ? `Pay UGX ${amount} with PesaPal` : `Pay UGX ${amount}`}
             onPress={pay}
             loading={submitting}
             disabled={!canPay}
-            
             full
             style={{ marginTop: spacing.lg }}
           />
+          )}
         </View>
       )}
     </Sheet>
@@ -151,6 +200,7 @@ function AirtelLogo() {
 }
 
 const s = StyleSheet.create({
+  waiting: { fontSize: font.sm, color: colors.textSecondary, textAlign: 'center', lineHeight: 18 },
   close: { alignSelf: 'flex-end' },
   closeText: { fontSize: font.sm, fontWeight: weight.semibold, color: colors.text },
   center: { alignItems: 'center' },
