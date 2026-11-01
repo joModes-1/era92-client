@@ -1,10 +1,9 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { api } from '../../api';
-import { colors, font, spacing, weight, tracking } from '../../theme';
+import { colors, spacing } from '../../theme';
 import { ReportScreen, today } from './reportHelpers';
-import { Surface, SectionHeader, EmptyState, MetricStrip, ListRow, MiniBar, initials } from '../../components/ui';
-import Icon from '../../components/Icon';
+import { HeroCard, Surface, SectionHeader, EmptyState, ListRow, MiniBar, initials } from '../../components/ui';
 
 const ugx = (n: any) => Number(n || 0).toLocaleString();
 
@@ -30,38 +29,22 @@ export default function DailyReportScreen() {
         return (
           <View style={{ gap: spacing.lg }}>
             {/* Hero: the one number that matters today */}
-            <Surface elevation="md" padded="lg" style={styles.hero}>
-              <View style={styles.heroTop}>
-                <View>
-                  <Text style={styles.heroLabel}>GROSS TAKINGS</Text>
-                  <View style={styles.amountRow}>
-                    <Text style={styles.currency}>UGX</Text>
-                    <Text style={styles.amount} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.55}>
-                      {ugx(s.gross_ugx)}
-                    </Text>
-                  </View>
-                </View>
-                <View style={styles.heroIcon}>
-                  <Icon name="coins" size={16} color={colors.primary} />
-                </View>
-              </View>
-
-              <View style={styles.heroDivider} />
-
-              <MetricStrip
-                items={[
-                  { label: 'Washes', value: Number(s.settled_washes || 0) },
-                  { label: 'Rewards', value: Number(s.redemption_count || 0), tone: 'accent' },
-                  { label: 'Handovers', value: Number(s.handover_count || 0), tone: 'info' },
-                ]}
-              />
-            </Surface>
+            <HeroCard
+              label="Gross takings"
+              prefix="UGX"
+              value={ugx(s.gross_ugx)}
+              stats={[
+                { label: 'Washes', value: Number(s.settled_washes || 0) },
+                { label: 'Rewards', value: Number(s.redemption_count || 0) },
+                { label: 'Handovers', value: Number(s.handover_count || 0) },
+              ]}
+            />
 
             {/* Per-worker contribution */}
             {workers.length > 0 && (
               <View>
                 <SectionHeader title="By worker" count={workers.length} icon="users" />
-                <Surface elevation="sm" padded="sm">
+                <Surface elevation="sm" padded="sm" style={{ paddingHorizontal: spacing.md }}>
                   {workers.map((w: any, i: number) => (
                     <ListRow
                       key={i}
@@ -77,7 +60,7 @@ export default function DailyReportScreen() {
                           <MiniBar
                             value={Number(w.cash_taken_ugx || 0)}
                             max={topWorker}
-                            color={i === 0 ? colors.primary : colors.ink[300]}
+                            color={i === 0 ? colors.primary : colors.primaryTint}
                           />
                         </View>
                       }
@@ -94,20 +77,5 @@ export default function DailyReportScreen() {
 }
 
 const styles = StyleSheet.create({
-  hero: { gap: spacing.lg },
-  heroTop: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
-  heroLabel: {
-    fontSize: font.xs, fontWeight: weight.heavy,
-    color: colors.textMuted, letterSpacing: tracking.capsWide, marginBottom: 6,
-  },
-  amountRow: { flexDirection: 'row', alignItems: 'baseline', gap: 6 },
-  currency: { fontSize: font.regular, fontWeight: weight.heavy, color: colors.textMuted },
-  amount: { fontSize: font.hero, fontWeight: weight.black, color: colors.text, letterSpacing: tracking.display },
-  heroIcon: {
-    width: 36, height: 36, borderRadius: 18,
-    backgroundColor: colors.primarySoft,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  heroDivider: { height: StyleSheet.hairlineWidth, backgroundColor: colors.borderLight },
   barWrap: { width: 54, marginTop: 4 },
 });

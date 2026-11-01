@@ -1,11 +1,26 @@
 import React, { useState } from 'react';
 import { LinearGradient } from 'expo-linear-gradient';
 import { TouchableOpacity, Text, View, StyleSheet, ActivityIndicator, ViewStyle, LayoutChangeEvent } from 'react-native';
-import { colors, radii, font, spacing, weight, shadow, tracking } from '../theme';
+import { colors, radii, font, spacing, weight, shadow } from '../theme';
 import Icon from './Icon';
 import { cssGradientPoints } from '../utils/cssGradient';
 
-type Variant = 'primary' | 'secondary' | 'danger' | 'ghost' | 'success' | 'dark';
+/**
+ * The one button in the app, for every role.
+ *
+ * primary    the screen's main action — navy with violet in the top-right
+ *            corner ("Continue with phone number", "Confirm", "Save")
+ * sweep      violet on the left sweeping to navy on the right — the design's
+ *            second action button ("Make a payment", "Book Service", "Pay")
+ * tonal      kept as a name for actions repeated down a list; on the tinted
+ *            page a soft fill read as an empty field, so it draws as primary
+ * secondary  outlined
+ * ghost      text only
+ * success / danger  solid fills for a state-changing step
+ *
+ * size="action" is the design's 48px full-width bottom action.
+ */
+type Variant = 'primary' | 'sweep' | 'tonal' | 'secondary' | 'danger' | 'ghost' | 'success';
 type Size = 'sm' | 'md' | 'lg' | 'action';
 
 export type GradientButtonProps = Props;
@@ -53,12 +68,13 @@ function Content({ icon, iconRight, iconColor, textStyle, title, iconSize }: any
 }
 
 export default function GradientButton({
-  title, onPress, variant = 'primary', size = 'md', loading, disabled, style, icon, iconRight, full,
+  title, onPress, variant: variantProp = 'primary', size = 'md', loading, disabled, style, icon, iconRight, full,
   gradientColors, gradientLocations, gradientStart, gradientEnd, gradientAngle,
 }: Props) {
+  const variant = variantProp === 'tonal' ? 'primary' : variantProp;
+  const sweep = variant === 'sweep';
   const s = SIZES[size];
   const isOff = disabled || loading;
-  const isAction = size === 'action';
   // Real rendered size, so a CSS angle can be turned into the right
   // start/end points for this box (see utils/cssGradient.ts).
   const [box, setBox] = useState({ w: 343, h: s.h });
@@ -66,8 +82,9 @@ export default function GradientButton({
     const { width, height } = e.nativeEvent.layout;
     if (width !== box.w || height !== box.h) setBox({ w: width, h: height });
   };
-  const angled = isAction || gradientAngle !== undefined;
-  const actionPoints = cssGradientPoints(gradientAngle ?? colors.gradientButtonAngle, box.w, box.h);
+  const actionPoints = cssGradientPoints(
+    gradientAngle ?? (sweep ? colors.gradientButton2Angle : colors.gradientButtonAngle), box.w, box.h,
+  );
   const base: ViewStyle = {
     minHeight: s.h,
     paddingHorizontal: s.px,
@@ -117,7 +134,6 @@ export default function GradientButton({
   const SOLID: Partial<Record<Variant, string>> = {
     danger: colors.error,
     success: colors.success,
-    dark: colors.ink[900],
   };
   if (SOLID[variant]) {
     return (
@@ -134,7 +150,7 @@ export default function GradientButton({
     );
   }
 
-  // Primary — brand gradient with a colored glow
+  // Primary / sweep — brand gradient with a colored glow
   return (
     <TouchableOpacity
       onPress={onPress}
@@ -142,15 +158,15 @@ export default function GradientButton({
       activeOpacity={0.88}
       style={[full && { alignSelf: 'stretch' }, !isOff && shadow.brand, isOff && styles.off, style]}
     >
-      {/* The `action` size carries the design's CSS gradient, converted to
-          points for this button's real size; every other size keeps the
-          long-standing brand gradient. A call site can still override any
-          of it (gradientColors/Locations/Start/End). */}
+      {/* Every size carries one of the design's two button gradients,
+          converted to points for this button's real size, so the same
+          "Save" looks the same in every role's app. A call site can still
+          override any of it (gradientColors/Locations/Start/End/Angle). */}
       <LinearGradient
-        colors={(gradientColors ?? (isAction ? colors.gradientButton : colors.gradient)) as any}
-        locations={(gradientLocations ?? (isAction ? colors.gradientButtonLocations : undefined)) as any}
-        start={gradientStart ?? (angled ? actionPoints.start : { x: 0, y: 0 })}
-        end={gradientEnd ?? (angled ? actionPoints.end : { x: 1, y: 1 })}
+        colors={(gradientColors ?? (sweep ? colors.gradientButton2 : colors.gradientButton)) as any}
+        locations={(gradientLocations ?? (gradientColors ? undefined : sweep ? colors.gradientButton2Locations : colors.gradientButtonLocations)) as any}
+        start={gradientStart ?? actionPoints.start}
+        end={gradientEnd ?? actionPoints.end}
         onLayout={onBoxLayout}
         style={base}
       >

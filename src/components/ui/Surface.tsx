@@ -1,6 +1,6 @@
 import React, { ReactNode } from 'react';
 import { View, StyleSheet, ViewStyle, StyleProp, TouchableOpacity } from 'react-native';
-import { colors, radii, spacing, shadow } from '../../theme';
+import { colors, radii, spacing, shadow, brandTheme } from '../../theme';
 
 type Elevation = 'none' | 'xs' | 'sm' | 'md' | 'lg';
 
@@ -33,6 +33,7 @@ export default function Surface({
       borderWidth: borderless ? 0 : StyleSheet.hairlineWidth,
     },
     shadow[elevation] as ViewStyle,
+    !borderless ? { borderColor: brandTheme.border, borderWidth: 1, shadowColor: brandTheme.shadowColor, shadowOpacity: 0.09 } : null,
     style,
   ];
 

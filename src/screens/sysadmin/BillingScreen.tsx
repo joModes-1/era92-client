@@ -1,16 +1,14 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, RefreshControl, TouchableOpacity } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { api } from '../../api';
-import { colors, radii, font, spacing, weight, tracking } from '../../theme';
-import Icon from '../../components/Icon';
+import { colors, font, spacing, weight, tracking } from '../../theme';
 import Badge from '../../components/Badge';
-import ScreenHeader, { HeaderStat } from '../../components/ScreenHeader';
+import ScreenHeader from '../../components/ScreenHeader';
 import { useAppAlert } from '../../components/AppAlert';
 import {
   Surface, SectionHeader, EmptyState, SkeletonList, ListRow,
-  Field, FormSheet, PillPicker,
+  Field, FormSheet, PillPicker, HeroCard, StatGrid, MonthBars, Hint,
 } from '../../components/ui';
 
 const ugx = (n: any) => Number(n || 0).toLocaleString();
@@ -151,15 +149,12 @@ export default function BillingScreen() {
 
   const mrr = Number(s.mrr_ugx || 0);
   const collectedMonth = Number(s.collected_this_month || 0);
-  const maxOnboard = Math.max(...onboarding.map((o: any) => Number(o.onboarded || 0)), 1);
 
   return (
     <View style={styles.container}>
-      <ScreenHeader title="Billing" subtitle="What the platform earns">
-        <HeaderStat label="Paying" value={Number(s.paying_orgs || 0)} icon="check-circle" />
-        <HeaderStat label="Trial" value={Number(s.trial_orgs || 0)} icon="hourglass-half" />
-        <HeaderStat label="Overdue" value={Number(s.past_due_orgs || 0)} icon="exclamation-triangle" />
-      </ScreenHeader>
+      {/* No stat rail here: paying / trial / overdue are the Tenancy card
+          below, and showing them twice on one screen said nothing new. */}
+      <ScreenHeader title="Billing" subtitle="What the platform earns" />
 
       <ScrollView
         style={styles.scroll}
@@ -167,52 +162,28 @@ export default function BillingScreen() {
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} />}
       >
-        {/* ── MRR: the platform's own headline number ─────────── */}
-        <LinearGradient
-          colors={[colors.ink[800], colors.ink[950]]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.hero}
-        >
-          <View style={styles.bloom} pointerEvents="none" />
-          <Text style={styles.heroKicker}>MONTHLY RECURRING REVENUE</Text>
-          <View style={styles.heroRow}>
-            <Text style={styles.heroCurrency}>UGX</Text>
-            <Text style={styles.heroValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.5}>
-              {ugx(mrr)}
-            </Text>
-          </View>
-          <Text style={styles.heroSub}>
-            from {Number(s.paying_orgs || 0)} paying organisation{Number(s.paying_orgs) === 1 ? '' : 's'}
-          </Text>
+        {/* ── MRR: the platform's own headline number ── */}
+        <HeroCard
+          label="Monthly recurring revenue"
+          prefix="UGX"
+          value={ugx(mrr)}
+          caption={`from ${Number(s.paying_orgs || 0)} paying organisation${Number(s.paying_orgs) === 1 ? '' : 's'}`}
+          stats={[
+            { label: 'Collected this month', value: compact(collectedMonth) },
+            { label: 'All time', value: compact(Number(s.collected_all_time || 0)) },
+            { label: 'Onboarded', value: Number(s.onboarded_this_month || 0) },
+          ]}
+        />
 
-          <View style={styles.heroFoot}>
-            <View style={styles.heroFootItem}>
-              <Text style={styles.heroFootValue}>{compact(collectedMonth)}</Text>
-              <Text style={styles.heroFootLabel}>Collected this month</Text>
-            </View>
-            <View style={styles.heroFootDivide} />
-            <View style={styles.heroFootItem}>
-              <Text style={styles.heroFootValue}>{compact(Number(s.collected_all_time || 0))}</Text>
-              <Text style={styles.heroFootLabel}>All time</Text>
-            </View>
-            <View style={styles.heroFootDivide} />
-            <View style={styles.heroFootItem}>
-              <Text style={styles.heroFootValue}>{Number(s.onboarded_this_month || 0)}</Text>
-              <Text style={styles.heroFootLabel}>Onboarded</Text>
-            </View>
-          </View>
-        </LinearGradient>
-
-        {/* ── Who needs chasing ───────────────────────────────── */}
+        {/* ── Who needs chasing ── */}
         <View>
-          <SectionHeader title="Needs chasing" count={attention.length} icon="bell" />
+          <SectionHeader title="Needs chasing" count={attention.length} />
           {attention.length === 0 ? (
             <Surface elevation="sm" padded="lg">
               <EmptyState icon="check-circle" title="Nobody is overdue" message="Every subscription is current or not yet due." />
             </Surface>
           ) : (
-            <Surface elevation="sm" padded="sm">
+            <Surface elevation="sm" padded="sm" style={styles.listCard}>
               {attention.map((o: any, i: number) => {
                 const d = o.days_to_due == null ? null : Number(o.days_to_due);
                 const over = d != null && d < 0;
@@ -243,57 +214,46 @@ export default function BillingScreen() {
           )}
         </View>
 
-        {/* ── Onboarding curve ────────────────────────────────── */}
+        {/* ── Tenancy mix, stated rather than charted ── */}
         <View>
-          <SectionHeader title="New organisations" icon="chart-bar" />
+          <SectionHeader title="Tenancy" />
+          <Surface elevation="sm" padded="lg">
+            <StatGrid
+              items={[
+                { label: 'Paying', value: Number(s.paying_orgs || 0), tone: 'success' },
+                { label: 'On trial', value: Number(s.trial_orgs || 0), tone: 'info' },
+                { label: 'Overdue', value: Number(s.past_due_orgs || 0), tone: Number(s.past_due_orgs) > 0 ? 'error' : undefined },
+                { label: 'Cancelled', value: Number(s.cancelled_orgs || 0), muted: true },
+              ]}
+            />
+          </Surface>
+        </View>
+
+        {/* ── Onboarding curve ── */}
+        <View>
+          <SectionHeader title="New organisations" />
           <Surface elevation="sm" padded="lg">
             {onboarding.every((o: any) => Number(o.onboarded || 0) === 0) ? (
               <EmptyState icon="chart-bar" title="No sign-ups in six months" message="New tenants will chart here as you onboard them." />
             ) : (
-              <View style={styles.months}>
-                {onboarding.map((o: any, i: number) => {
-                  const c = Number(o.onboarded || 0);
-                  const h = Math.max(3, (c / maxOnboard) * 68);
-                  const isLast = i === onboarding.length - 1;
-                  return (
-                    <View key={o.month} style={styles.monthCol}>
-                      <Text style={styles.monthValue}>{c}</Text>
-                      <View
-                        style={[
-                          styles.monthBar,
-                          { height: h, backgroundColor: isLast ? colors.primary : colors.primaryTint },
-                        ]}
-                      />
-                      <Text style={[styles.monthLabel, isLast && styles.monthLabelOn]}>{monthLabel(o.month)}</Text>
-                      <Text style={styles.monthMoney}>{compact(Number(o.collected_ugx || 0))}</Text>
-                    </View>
-                  );
-                })}
-              </View>
+              <MonthBars
+                legend="Organisations onboarded · UGX collected below"
+                items={onboarding.map((o: any) => ({
+                  key: o.month,
+                  label: monthLabel(o.month),
+                  value: Number(o.onboarded || 0),
+                  sub: compact(Number(o.collected_ugx || 0)),
+                }))}
+              />
             )}
-            <View style={styles.legend}>
-              <Text style={styles.legendText}>orgs onboarded · UGX collected below</Text>
-            </View>
           </Surface>
         </View>
 
-        {/* ── Tenancy mix, stated rather than charted ─────────── */}
-        <Surface elevation="sm" padded="lg" style={{ gap: spacing.md }}>
-          <Text style={styles.mixTitle}>TENANCY</Text>
-          <View style={styles.mixGrid}>
-            <MixStat label="Paying" value={s.paying_orgs} tone={colors.success} />
-            <MixStat label="On trial" value={s.trial_orgs} tone={colors.info} />
-            <MixStat label="Overdue" value={s.past_due_orgs} tone={colors.error} />
-            <MixStat label="Cancelled" value={s.cancelled_orgs} tone={colors.textMuted} />
-          </View>
-        </Surface>
-
-        {/* ── The price list ──────────────────────────────────── */}
+        {/* ── The price list ── */}
         <View>
           <SectionHeader
             title="Plans"
             count={plans.length}
-            icon="tags"
             action="New plan"
             onAction={openNew}
           />
@@ -340,7 +300,7 @@ export default function BillingScreen() {
                     </TouchableOpacity>
                     <Text style={styles.planDot}>·</Text>
                     <TouchableOpacity onPress={() => toggleActive(p)} hitSlop={8} activeOpacity={0.6}>
-                      <Text style={[styles.planAction, { color: p.active ? colors.textMuted : colors.success }]}>
+                      <Text style={[styles.planAction, { color: p.active ? colors.textSecondary : colors.successText }]}>
                         {p.active ? 'Retire' : 'Restore'}
                       </Text>
                     </TouchableOpacity>
@@ -351,13 +311,10 @@ export default function BillingScreen() {
           )}
         </View>
 
-        <View style={styles.hint}>
-          <Icon name="info-circle" size={11} color={colors.textMuted} />
-          <Text style={styles.hintText}>
-            Retiring a plan hides it from new assignments. Organisations already on it keep their price
-            and are not moved — change those individually.
-          </Text>
-        </View>
+        <Hint>
+          Retiring a plan hides it from new assignments. Organisations already on it keep their price
+          and are not moved — change those individually.
+        </Hint>
       </ScrollView>
 
       <FormSheet
@@ -413,76 +370,26 @@ export default function BillingScreen() {
   );
 }
 
-function MixStat({ label, value, tone }: { label: string; value: any; tone: string }) {
-  return (
-    <View style={styles.mixStat}>
-      <Text style={[styles.mixValue, { color: tone }]}>{Number(value || 0)}</Text>
-      <Text style={styles.mixLabel} numberOfLines={1}>{label}</Text>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   scroll: { flex: 1 },
-  body: { padding: spacing.lg, paddingBottom: spacing.xxxl, gap: spacing.lg },
+  body: { padding: spacing.lg, paddingBottom: spacing.xxxl, gap: spacing.xl },
 
-  hero: { borderRadius: radii.lg, padding: spacing.lg, overflow: 'hidden' },
-  bloom: {
-    position: 'absolute', top: -70, right: -40,
-    width: 180, height: 180, borderRadius: 90,
-    backgroundColor: colors.bloomBrandSoft,
-  },
-  heroKicker: {
-    fontSize: font.micro, fontWeight: weight.heavy,
-    color: 'rgba(255,255,255,0.55)', letterSpacing: tracking.capsWide,
-  },
-  heroRow: { flexDirection: 'row', alignItems: 'baseline', gap: 6, marginTop: 3 },
-  heroCurrency: { fontSize: font.sm, fontWeight: weight.heavy, color: 'rgba(255,255,255,0.55)' },
-  heroValue: { flexShrink: 1, fontSize: font.display, fontWeight: weight.black, color: '#fff', letterSpacing: tracking.display },
-  heroSub: { fontSize: font.xs, color: 'rgba(255,255,255,0.65)', marginTop: 1 },
-  heroFoot: {
-    flexDirection: 'row', alignItems: 'center',
-    marginTop: spacing.lg, paddingTop: spacing.md,
-    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: 'rgba(255,255,255,0.16)',
-  },
-  heroFootItem: { flex: 1, gap: 1 },
-  heroFootValue: { fontSize: font.regular, fontWeight: weight.black, color: '#fff' },
-  heroFootLabel: { fontSize: font.micro, color: 'rgba(255,255,255,0.6)' },
-  heroFootDivide: { width: StyleSheet.hairlineWidth, height: 24, backgroundColor: 'rgba(255,255,255,0.18)' },
-
-  months: { flexDirection: 'row', alignItems: 'flex-end', gap: spacing.sm, minHeight: 112 },
-  monthCol: { flex: 1, alignItems: 'center', gap: 3 },
-  monthValue: { fontSize: font.micro, fontWeight: weight.heavy, color: colors.textSecondary },
-  monthBar: { width: '100%', borderTopLeftRadius: 4, borderTopRightRadius: 4 },
-  monthLabel: { fontSize: font.micro, color: colors.textMuted, fontWeight: weight.semibold },
-  monthLabelOn: { color: colors.primary, fontWeight: weight.heavy },
-  monthMoney: { fontSize: font.micro, color: colors.ink[400] },
-  legend: { marginTop: spacing.sm, alignItems: 'center' },
-  legendText: { fontSize: font.micro, color: colors.textMuted },
-
-  mixTitle: { fontSize: font.micro, fontWeight: weight.heavy, color: colors.textMuted, letterSpacing: tracking.capsWide },
-  mixGrid: { flexDirection: 'row', gap: spacing.sm },
-  mixStat: { flex: 1, gap: 1 },
-  mixValue: { fontSize: font.xl, fontWeight: weight.black, letterSpacing: tracking.tight },
-  mixLabel: { fontSize: font.micro, color: colors.textMuted, fontWeight: weight.semibold },
+  listCard: { paddingHorizontal: spacing.md },
 
   planCard: { gap: spacing.sm },
   planOff: { opacity: 0.6 },
   planHead: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
   planName: { fontSize: font.regular, fontWeight: weight.heavy, color: colors.text, letterSpacing: tracking.tight },
-  planCode: { fontSize: font.micro, color: colors.textMuted, marginTop: 1 },
-  planPrice: { fontSize: font.regular, fontWeight: weight.black, color: colors.text, letterSpacing: tracking.tight },
-  planCycle: { fontSize: font.micro, color: colors.textMuted },
-  planDesc: { fontSize: font.xs, color: colors.textSecondary, lineHeight: 17 },
+  planCode: { fontSize: font.sm, color: colors.textMuted, marginTop: 2 },
+  planPrice: { fontSize: font.lg, fontWeight: weight.black, color: colors.text, letterSpacing: tracking.tight },
+  planCycle: { fontSize: font.xs, color: colors.textMuted },
+  planDesc: { fontSize: font.sm, color: colors.textSecondary, lineHeight: 18 },
   planFoot: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
-    paddingTop: spacing.sm,
+    paddingTop: spacing.md,
     borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.borderLight,
   },
-  planAction: { fontSize: font.xs, fontWeight: weight.heavy, color: colors.primary },
-  planDot: { fontSize: font.xs, color: colors.ink[300] },
-
-  hint: { flexDirection: 'row', alignItems: 'flex-start', gap: 7, paddingHorizontal: spacing.xs },
-  hintText: { flex: 1, fontSize: font.xs, color: colors.textMuted, lineHeight: 17 },
+  planAction: { fontSize: font.sm, fontWeight: weight.heavy, color: colors.primaryText },
+  planDot: { fontSize: font.sm, color: colors.ink[300] },
 });

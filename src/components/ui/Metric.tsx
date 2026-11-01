@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet, ViewStyle } from 'react-native';
-import { colors, font, spacing, radii, tracking, weight, Tone, tone as toneMap } from '../../theme';
+import { colors, font, spacing, radii, tracking, weight, Tone, tone as toneMap, staffType, staffText } from '../../theme';
 import Icon from '../Icon';
 
 /**
@@ -15,14 +15,14 @@ export function MetricStrip({ items, style }: { items: MetricItem[]; style?: Vie
           {i > 0 && <View style={styles.divider} />}
           <View style={styles.stripCell}>
             <Text
-              style={[styles.stripValue, it.tone ? { color: toneMap[it.tone].fg } : null]}
+              style={[styles.stripValue, styles.stripValueStaff, it.tone ? { color: toneMap[it.tone].text } : null]}
               numberOfLines={1}
               adjustsFontSizeToFit
               minimumFontScale={0.7}
             >
               {it.value}
             </Text>
-            <Text style={styles.stripLabel} numberOfLines={1}>{it.label.toUpperCase()}</Text>
+            <Text style={[styles.stripLabel, styles.stripLabelStaff]} numberOfLines={1}>{it.label}</Text>
           </View>
         </React.Fragment>
       ))}
@@ -56,12 +56,12 @@ export function HeroMetric({
     <View style={[styles.hero, align === 'center' && { alignItems: 'center' }]}>
       <View style={styles.heroLabelRow}>
         {icon ? <Icon name={icon} size={11} color={colors.textMuted} /> : null}
-        <Text style={styles.heroLabel}>{label.toUpperCase()}</Text>
+        <Text style={[styles.heroLabel, styles.heroLabelStaff]}>{label}</Text>
       </View>
-      <Text style={[styles.heroValue, { color: c.fg }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}>
+      <Text style={[styles.heroValue, styles.heroValueStaff, { color: c.text }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}>
         {value}
       </Text>
-      {sublabel ? <Text style={styles.heroSub}>{sublabel}</Text> : null}
+      {sublabel ? <Text style={[styles.heroSub, styles.heroSubStaff]}>{sublabel}</Text> : null}
     </View>
   );
 }
@@ -74,12 +74,13 @@ export function DataPoint({
 }: { label: string; value: string | number; tone?: Tone; emphasis?: boolean }) {
   return (
     <View style={styles.dp}>
-      <Text style={styles.dpLabel}>{label}</Text>
+      <Text style={[styles.dpLabel, styles.dpLabelStaff]}>{label}</Text>
       <Text
         style={[
           styles.dpValue,
-          emphasis && styles.dpValueEmphasis,
-          t ? { color: toneMap[t].fg } : null,
+          styles.dpValueStaff,
+          emphasis && (styles.dpValueEmphasisStaff),
+          t ? { color: toneMap[t].text } : null,
         ]}
       >
         {value}
@@ -103,10 +104,10 @@ export function StatTile({
           <Icon name={icon} size={12} color={c.fg} />
         </View>
       ) : null}
-      <Text style={[styles.tileValue, { color: c.fg }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.65}>
+      <Text style={[styles.tileValue, styles.tileValueStaff, { color: c.text }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.65}>
         {value}
       </Text>
-      <Text style={styles.tileLabel} numberOfLines={2}>{label}</Text>
+      <Text style={[styles.tileLabel, styles.tileLabelStaff]} numberOfLines={2}>{label}</Text>
     </View>
   );
 }
@@ -133,19 +134,17 @@ const styles = StyleSheet.create({
     letterSpacing: tracking.tight,
   },
   stripLabel: {
-    fontSize: font.micro,
-    fontWeight: weight.bold,
+    fontSize: font.xs,
+    fontWeight: weight.semibold,
     color: colors.textMuted,
-    letterSpacing: tracking.caps,
   },
 
   hero: { gap: 4 },
   heroLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   heroLabel: {
-    fontSize: font.xs,
-    fontWeight: weight.bold,
+    fontSize: font.sm,
+    fontWeight: weight.semibold,
     color: colors.textMuted,
-    letterSpacing: tracking.capsWide,
   },
   heroValue: {
     fontSize: font.hero,
@@ -157,7 +156,6 @@ const styles = StyleSheet.create({
   dp: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', paddingVertical: 5 },
   dpLabel: { fontSize: font.sm, color: colors.textSecondary },
   dpValue: { fontSize: font.sm, fontWeight: weight.bold, color: colors.text },
-  dpValueEmphasis: { fontSize: font.lg, fontWeight: weight.heavy },
 
   tile: {
     flex: 1,
@@ -172,4 +170,16 @@ const styles = StyleSheet.create({
   },
   tileValue: { fontSize: font.xl, fontWeight: weight.heavy, letterSpacing: tracking.tight },
   tileLabel: { fontSize: font.xs, color: colors.textSecondary, fontWeight: weight.medium },
+
+  // Staff variants (STAFF-UI-SPEC.md): weights ≤700, tabular figures, readable greys.
+  stripValueStaff: { fontSize: 20, lineHeight: 26, fontWeight: weight.bold, letterSpacing: 0, ...staffType.tabular },
+  stripLabelStaff: { ...staffType.meta },
+  heroLabelStaff: { ...staffType.caption, color: staffText.secondary },
+  heroValueStaff: { ...staffType.hero, letterSpacing: 0 },
+  heroSubStaff: { ...staffType.meta, color: staffText.secondary },
+  dpLabelStaff: { ...staffType.secondary },
+  dpValueStaff: { ...staffType.label, ...staffType.tabular },
+  dpValueEmphasisStaff: { fontSize: 17, lineHeight: 22, fontWeight: weight.bold },
+  tileValueStaff: { fontSize: 20, lineHeight: 26, fontWeight: weight.bold, letterSpacing: 0, ...staffType.tabular },
+  tileLabelStaff: { ...staffType.meta, color: staffText.secondary },
 });

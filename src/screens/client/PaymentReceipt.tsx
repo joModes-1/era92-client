@@ -6,7 +6,7 @@ import * as Clipboard from 'expo-clipboard';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, radii, font, spacing, weight, tracking } from '../../theme';
 import Icon from '../../components/Icon';
-import ComponentButton1 from '../../components/buttons/ComponentButton1';
+import GradientButton from '../../components/GradientButton';
 
 /**
  * The receipt shown after a client declares how they're paying.
@@ -131,7 +131,7 @@ export default function PaymentReceipt({
         </ScrollView>
 
         <View style={[s.footer, { paddingBottom: insets.bottom + spacing.lg }]}>
-          <ComponentButton1 title="Continue" onPress={onClose} />
+          <GradientButton size="action" full title="Continue" onPress={onClose} />
         </View>
       </View>
     </Modal>

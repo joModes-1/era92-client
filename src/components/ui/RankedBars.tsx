@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import { colors, radii, font, spacing, weight, tracking } from '../../theme';
+import { LinearGradient } from 'expo-linear-gradient';
+import { colors, radii, font, spacing, weight, tracking, brandTheme } from '../../theme';
 
 export type RankedItem = {
   key: string;
@@ -56,6 +57,13 @@ export default function RankedBars({
             </View>
 
             <View style={styles.track}>
+              {!dead ? (
+                <LinearGradient
+                  colors={leader ? brandTheme.barOn : [brandTheme.barBase, brandTheme.barBase]}
+                  start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+                  style={[styles.bar, { width: `${Math.max(pct, 2)}%`, height: 8 }]}
+                />
+              ) : (
               <View
                 style={[
                   styles.bar,
@@ -70,6 +78,7 @@ export default function RankedBars({
                   },
                 ]}
               />
+              )}
             </View>
 
             {item.meta ? (

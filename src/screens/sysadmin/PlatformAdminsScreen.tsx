@@ -1,13 +1,12 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, RefreshControl } from 'react-native';
 import { api } from '../../api';
-import { colors, radii, font, spacing, weight, tracking } from '../../theme';
-import Icon from '../../components/Icon';
+import { colors, font, spacing, weight, tracking } from '../../theme';
 import ScreenHeader, { HeaderAction } from '../../components/ScreenHeader';
 import Badge from '../../components/Badge';
 import { useAppAlert } from '../../components/AppAlert';
 import {
-  Surface, SectionHeader, EmptyState, SkeletonList, Field, FormSheet, initials,
+  Surface, SectionHeader, EmptyState, SkeletonList, Field, FormSheet, NoticeRow, Avatar,
 } from '../../components/ui';
 
 function lastSeen(iso?: string) {
@@ -110,12 +109,12 @@ export default function PlatformAdminsScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} />}
       >
         {/* These accounts outrank every tenant — make the stakes explicit. */}
-        <Surface elevation="sm" tone={colors.warningSoft} borderless style={styles.notice}>
-          <Icon name="shield-alt" size={13} color={colors.warning} />
-          <Text style={styles.noticeText}>
-            Platform admins can create, suspend and administer every organization on the system.
-          </Text>
-        </Surface>
+        <NoticeRow
+          tone="warning"
+          icon="shield-alt"
+          title="Full access to every organization"
+          subtitle="Platform admins can create, suspend and administer every organization on the system."
+        />
 
         {admins.length === 0 ? (
           <Surface elevation="sm" padded="lg">
@@ -123,31 +122,27 @@ export default function PlatformAdminsScreen() {
           </Surface>
         ) : (
           <View>
-            <SectionHeader title="Accounts" count={admins.length} icon="user-shield" />
-            <View style={{ gap: spacing.sm }}>
-              {admins.map((a: any) => {
+            <SectionHeader title="Accounts" count={admins.length} />
+            <Surface elevation="sm" padded="sm" style={styles.listCard}>
+              {admins.map((a: any, i: number) => {
                 const isActive = a.status === 'active';
                 return (
-                  <Surface key={a.id} elevation="sm" style={[styles.card, !isActive && styles.cardOff]}>
-                    <View style={styles.head}>
-                      <View style={[styles.avatar, !isActive && styles.avatarOff]}>
-                        <Text style={styles.avatarText}>{initials(a.full_name)}</Text>
-                      </View>
-                      <View style={styles.who}>
-                        <Text style={styles.name} numberOfLines={1}>{a.full_name}</Text>
-                        <Text style={styles.meta} numberOfLines={1}>
-                          {a.phone || (a.username ? `@${a.username}` : a.email)}
-                        </Text>
-                        <Text style={styles.sub} numberOfLines={1}>{lastSeen(a.last_login_at)}</Text>
-                      </View>
-                      <View style={styles.badges}>
-                        <Badge label={isActive ? 'Active' : 'Suspended'} tone={isActive ? 'success' : 'error'} dot small />
-                      </View>
+                  <View key={a.id} style={[styles.head, i < admins.length - 1 && styles.rowBorder, !isActive && styles.cardOff]}>
+                    <Avatar name={a.full_name} size={40} variant={isActive ? 'soft' : 'muted'} />
+                    <View style={styles.who}>
+                      <Text style={styles.name} numberOfLines={1}>{a.full_name}</Text>
+                      <Text style={styles.meta} numberOfLines={1}>
+                        {a.phone || (a.username ? `@${a.username}` : a.email)}
+                      </Text>
+                      <Text style={styles.sub} numberOfLines={1}>{lastSeen(a.last_login_at)}</Text>
                     </View>
-                  </Surface>
+                    {/* Only the exception is labelled; "Active" on every
+                        row was noise. */}
+                    {!isActive ? <Badge label="Suspended" tone="error" dot small /> : null}
+                  </View>
                 );
               })}
-            </View>
+            </Surface>
           </View>
         )}
       </ScrollView>
@@ -200,24 +195,14 @@ export default function PlatformAdminsScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   scroll: { flex: 1 },
-  body: { padding: spacing.lg, paddingBottom: spacing.xxxl, gap: spacing.lg },
+  body: { padding: spacing.lg, paddingBottom: spacing.xxxl, gap: spacing.xl },
 
-  notice: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
-  noticeText: { flex: 1, fontSize: font.sm, color: colors.warning, fontWeight: weight.semibold, lineHeight: 18 },
-
-  card: { gap: spacing.md },
+  listCard: { paddingHorizontal: spacing.md },
   cardOff: { opacity: 0.72 },
-  head: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
-  avatar: {
-    width: 38, height: 38, borderRadius: radii.full,
-    backgroundColor: colors.ink[900],
-    alignItems: 'center', justifyContent: 'center',
-  },
-  avatarOff: { backgroundColor: colors.ink[400] },
-  avatarText: { fontSize: font.sm, fontWeight: weight.heavy, color: '#fff' },
+  head: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: spacing.md },
+  rowBorder: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.borderLight },
   who: { flex: 1, gap: 2 },
   name: { fontSize: font.regular, fontWeight: weight.heavy, color: colors.text, letterSpacing: tracking.tight },
-  meta: { fontSize: font.xs, color: colors.textSecondary },
-  sub: { fontSize: font.micro, color: colors.textMuted },
-  badges: { alignItems: 'flex-end', gap: 4 },
+  meta: { fontSize: font.sm, color: colors.textSecondary },
+  sub: { fontSize: font.xs, color: colors.textMuted },
 });

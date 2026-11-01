@@ -6,10 +6,8 @@ import Svg, { Path, G, Defs, ClipPath, Rect } from 'react-native-svg';
  * `assets/Layer_1.svg` and reproduced here as react-native-svg so it stays
  * sharp at any size, the same way Era92Logo does for the footer mark.
  *
- * Temporary: standing in for the reconstructed `Wordmark` text build on the
- * welcome screen while that comparison is still open. The "92" keeps its
- * two exported oranges; only "CarWash" takes `color`, for use on a dark
- * field — same split Wordmark already made, kept here for the same reason.
+ * The "92" keeps its two exported oranges; only "CarWash" takes `color`, for
+ * use on a dark field (the splash).
  */
 
 const SRC_W = 239;

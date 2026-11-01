@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, ScrollView, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { colors, font, spacing, weight, tracking } from '../theme';
-import ComponentButton1 from '../components/buttons/ComponentButton1';
+import GradientButton from '../components/GradientButton';
 import CarWashLogo from '../components/CarWashLogo';
 import GradientText from '../components/GradientText';
 
@@ -54,7 +54,7 @@ export default function WelcomeScreen() {
       </ScrollView>
 
       <View style={s.footer}>
-        <ComponentButton1
+        <GradientButton size="action" full
           title="Continue with phone number"
           onPress={() => navigation.navigate('Register')}
         />

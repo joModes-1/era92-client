@@ -17,7 +17,7 @@ import { markPaymentDone } from './paymentToast';
 export default function PaymentSuccessScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
-  const { wash, method } = route.params || {};
+  const { wash, method, paid } = route.params || {};
 
   // What is still owed after any points the client spent at booking.
   const amountDue = wash?.amount_due_ugx != null ? Number(wash.amount_due_ugx) : Number(wash?.quoted_amount_ugx || 0);
@@ -26,8 +26,10 @@ export default function PaymentSuccessScreen() {
   // Honest copy: nothing has been charged at this point. In-app mobile
   // money arrives with the PesaPal integration; until then every method is
   // paid to the attendant, who confirms it in the worker app.
-  const title = method === 'cash' ? 'Pay at the bay' : 'Payment method saved';
-  const sub = amountDue <= 0
+  const title = paid ? 'Payment received' : method === 'cash' ? 'Pay at the bay' : 'Payment method saved';
+  const sub = paid
+    ? `UGX ${amountDue.toLocaleString()} received through PesaPal. The attendant has nothing to collect.`
+    : amountDue <= 0
     ? 'Nothing more to pay — your points cover this wash.'
     : method === 'cash'
       ? `Hand UGX ${amountDue.toLocaleString()} cash to the attendant when your car is ready. They confirm it in the app.`

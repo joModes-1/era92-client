@@ -5,10 +5,10 @@ import {
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { StatusBar } from 'expo-status-bar';
 import { colors, radii, font, spacing, weight, tracking } from '../theme';
 import Icon from './Icon';
 import GradientButton from './GradientButton';
-import ComponentButton2 from './buttons/ComponentButton2';
 import { AlertHost } from './AppAlert';
 import { Field } from './ui';
 
@@ -91,6 +91,7 @@ export default function ScannerSheet({
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
       <View style={styles.root}>
+        <StatusBar style="light" />
         {/* ── Top bar: back, and torch while the camera is live ── */}
         <View style={[styles.topBar, { paddingTop: insets.top + spacing.sm }]}>
           <TouchableOpacity onPress={onClose} hitSlop={12} style={styles.topBtn} activeOpacity={0.7}>
@@ -221,7 +222,7 @@ export default function ScannerSheet({
         {webPreview && (
           <View style={[styles.footer, { paddingBottom: insets.bottom + spacing.lg }]}>
             <Text style={styles.footerNote}>Or enter car details manually</Text>
-            <ComponentButton2 title="Enter car details" onPress={onWebContinue!} loading={busy} />
+            <GradientButton variant="sweep" size="action" full title="Enter car details" onPress={onWebContinue!} loading={busy} />
           </View>
         )}
 
@@ -231,7 +232,7 @@ export default function ScannerSheet({
             <Text style={styles.footerNote}>
               {showManual ? 'Point the camera at the code instead' : 'Or enter car details manually'}
             </Text>
-            <ComponentButton2
+            <GradientButton variant="sweep" size="action" full
               title={showManual ? 'Scan the code' : 'Enter car details'}
               onPress={() => setShowManual((s) => !s)}
             />
@@ -272,7 +273,7 @@ const styles = StyleSheet.create({
   cornerTR: { top: BRACKET_OFFSET, right: BRACKET_OFFSET, borderTopWidth: 2, borderRightWidth: 2 },
   cornerBL: { bottom: BRACKET_OFFSET, left: BRACKET_OFFSET, borderBottomWidth: 2, borderLeftWidth: 2 },
   cornerBR: { bottom: BRACKET_OFFSET, right: BRACKET_OFFSET, borderBottomWidth: 2, borderRightWidth: 2 },
-  webFrame: { width: '100%', aspectRatio: 1, backgroundColor: '#D9D9D9' },
+  webFrame: { width: '100%', aspectRatio: 1, backgroundColor: colors.scanFrame },
   torchSlash: {
     position: 'absolute',
     width: 2, height: 22,
@@ -348,7 +349,7 @@ const styles = StyleSheet.create({
 
   scanningOverlay: {
     position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-    backgroundColor: 'rgba(11,14,28,0.6)',
+    backgroundColor: colors.scrim,
     alignItems: 'center', justifyContent: 'center', gap: spacing.sm,
   },
   scanningText: { color: '#fff', fontSize: font.sm, fontWeight: weight.bold },

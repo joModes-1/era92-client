@@ -29,7 +29,8 @@ function monthLabel(key: string) {
 export default function HistoryScreen() {
   return (
     <ReportScreen
-      title="Wash History"
+      title="My washes"
+      subtitle="Every car you have booked"
       load={() => api.clientHistory()}
       render={(data) => {
         if (!Array.isArray(data)) return null;

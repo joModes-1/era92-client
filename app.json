@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Car Wash Loyalty",
+    "name": "92 CarWash",
     "slug": "carwash-loyalty",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -44,8 +44,8 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/splash-wordmark.png",
-          "imageWidth": 300,
+          "image": "./assets/splash-blank.png",
+          "imageWidth": 1,
           "resizeMode": "contain",
           "backgroundColor": "#1B3C8E"
         }

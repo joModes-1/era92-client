@@ -1,10 +1,11 @@
 import React, { useEffect, useRef } from 'react';
 import { Animated, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { StatusBar } from 'expo-status-bar';
 import CssGradient from './CssGradient';
 import CarWashLogo from './CarWashLogo';
 import Era92Logo from './Era92Logo';
-import { font, weight } from '../theme';
+import { colors, font, weight } from '../theme';
 
 /**
  * The branded splash from the Figma frame: violet in the top-left falling
@@ -33,12 +34,13 @@ export default function BrandSplash({ visible, onHidden }: { visible: boolean; o
 
   return (
     <Animated.View style={[StyleSheet.absoluteFill, { opacity }]} pointerEvents={visible ? 'auto' : 'none'}>
+      {visible ? <StatusBar style="light" /> : null}
       {/* Angle, stops and colours fitted to the Figma frame (228 colour
           samples, average error under 3/255 per channel). */}
       <CssGradient
-        colors={['#9800E0', '#1B3C8E']}
-        locations={[0.04, 0.46]}
-        angle={145}
+        colors={colors.gradientSplash}
+        locations={colors.gradientSplashLocations}
+        angle={colors.gradientSplashAngle}
         width={width}
         height={height}
         style={StyleSheet.absoluteFill}

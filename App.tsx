@@ -1,13 +1,12 @@
 import 'react-native-gesture-handler';
 import React from 'react';
 import * as SplashScreen from 'expo-splash-screen';
-import { useFonts, InstrumentSans_500Medium } from '@expo-google-fonts/instrument-sans';
-import { Poppins_900Black_Italic } from '@expo-google-fonts/poppins';
+import { useFonts, Poppins_900Black_Italic } from '@expo-google-fonts/poppins';
 import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createDrawerNavigator } from '@react-navigation/drawer';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AuthProvider, useAuth } from './src/api/AuthContext';
 import { AppAlertProvider, useAppAlert } from './src/components/AppAlert';
 import { useOtaUpdate } from './src/hooks/useOtaUpdate';
@@ -61,7 +60,6 @@ import AuditLogScreen from './src/screens/orgadmin/AuditLogScreen';
 import ClientHome from './src/screens/client/ClientHome';
 import HistoryScreen from './src/screens/client/HistoryScreen';
 import LoyaltyScreen from './src/screens/client/LoyaltyScreen';
-import LedgerScreen from './src/screens/client/LedgerScreen';
 import BranchScanScreen from './src/screens/client/BranchScanScreen';
 import BookWashScreen from './src/screens/client/BookWashScreen';
 import PaymentMethodScreen from './src/screens/client/PaymentMethodScreen';
@@ -73,16 +71,30 @@ import { colors } from './src/theme';
 const Stack = createNativeStackNavigator();
 const Drawer = createDrawerNavigator();
 
-const drawerScreenOptions = {
-  headerShown: false,
-  drawerActiveTintColor: colors.primary,
-  drawerType: 'front' as const,
-};
+/**
+ * Android draws the app edge to edge, so without this every screen's last
+ * row and bottom button sat under the system navigation bar. Padding the
+ * scene once here keeps all drawer screens clear of it; the strip it leaves
+ * is the page colour every screen already uses. A screen with its own
+ * bottom dock (the worker's slide-to-finish) handles the inset itself.
+ */
+function useDrawerScreenOptions() {
+  const insets = useSafeAreaInsets();
+  return {
+    headerShown: false,
+    drawerActiveTintColor: colors.primary,
+    drawerType: 'front' as const,
+    sceneStyle: { paddingBottom: insets.bottom, backgroundColor: colors.bg },
+  };
+}
+
+const ownsBottomInset = { sceneStyle: { backgroundColor: colors.bg } };
 
 function WorkerDrawer() {
+  const drawerScreenOptions = useDrawerScreenOptions();
   return (
     <Drawer.Navigator screenOptions={drawerScreenOptions} drawerContent={(p) => <AppDrawerContent {...p} />}>
-      <Drawer.Screen name="Current Car" component={WorkerHome} />
+      <Drawer.Screen name="Current Car" component={WorkerHome} options={ownsBottomInset} />
       <Drawer.Screen name="My Account" component={AccountScreen} />
       <Drawer.Screen name="My Points" component={WorkerPointsScreen} />
       <Drawer.Screen name="Leaderboard" component={LeaderboardScreen} />
@@ -93,6 +105,7 @@ function WorkerDrawer() {
 }
 
 function ManagerDrawer() {
+  const drawerScreenOptions = useDrawerScreenOptions();
   return (
     <Drawer.Navigator screenOptions={drawerScreenOptions} drawerContent={(p) => <AppDrawerContent {...p} />}>
       <Drawer.Screen name="Home" component={ManagerDashboardScreen} />
@@ -114,6 +127,7 @@ function ManagerDrawer() {
 }
 
 function OrgadminDrawer() {
+  const drawerScreenOptions = useDrawerScreenOptions();
   return (
     <Drawer.Navigator screenOptions={drawerScreenOptions} drawerContent={(p) => <AppDrawerContent {...p} />}>
       <Drawer.Screen name="Home" component={OrgDashboardScreen} />
@@ -139,6 +153,7 @@ function OrgadminDrawer() {
 }
 
 function SysadminDrawer() {
+  const drawerScreenOptions = useDrawerScreenOptions();
   return (
     <Drawer.Navigator screenOptions={drawerScreenOptions} drawerContent={(p) => <AppDrawerContent {...p} />}>
       <Drawer.Screen name="Overview" component={PlatformOverviewScreen} />
@@ -154,12 +169,16 @@ function SysadminDrawer() {
 }
 
 function ClientDrawer() {
+  const drawerScreenOptions = useDrawerScreenOptions();
   return (
     <Drawer.Navigator screenOptions={drawerScreenOptions} drawerContent={(p) => <AppDrawerContent {...p} />}>
-      <Drawer.Screen name="Active Wash" component={ClientHome} />
-      <Drawer.Screen name="History" component={HistoryScreen} />
-      <Drawer.Screen name="Loyalty" component={LoyaltyScreen} />
-      <Drawer.Screen name="Points History" component={LedgerScreen} />
+      {/* Every role's first page is its Home — the page the header's back
+          arrow and Android's back button return to. */}
+      <Drawer.Screen name="Home" component={ClientHome} />
+      <Drawer.Screen name="History" component={HistoryScreen} options={{ drawerLabel: 'My washes' }} />
+      {/* Balance, redeem, and the history behind the balance on one page —
+          it used to be two (Loyalty and Points History). */}
+      <Drawer.Screen name="Points" component={LoyaltyScreen} />
       <Drawer.Screen name="Report a problem" component={ReportIssueScreen} />
       <Drawer.Screen name="Profile" component={ProfileScreen} />
     </Drawer.Navigator>
@@ -214,7 +233,7 @@ function RootNavigator() {
   // Session restore is still in flight — nothing can be routed yet. The
   // splash is covering this, so it only has to hold the frame, not fill it.
   if (loading) {
-    return <View style={{ flex: 1, backgroundColor: colors.gradientSplash[0] }} />;
+    return <View style={{ flex: 1, backgroundColor: colors.gradientSplash[1] }} />;
   }
 
   if (!actor) {
@@ -292,18 +311,17 @@ export default function App() {
   // frames just leaves the native splash up a moment longer, rather than
   // letting text flash in the system font and re-flow once the real faces
   // arrive.
-  const [fontsLoaded] = useFonts({ InstrumentSans_500Medium, Poppins_900Black_Italic });
+  const [fontsLoaded] = useFonts({ Poppins_900Black_Italic });
   if (!fontsLoaded) return null;
 
   // SafeAreaProvider must sit above everything: React Navigation reads its
   // context, and without it insets resolve to zero or get applied twice.
   return (
     <SafeAreaProvider>
-      {/* Every screen past login opens with a pink/ink gradient at the very
-          top (ScreenHeader) or is the dark AuthShell — light icons are
-          correct everywhere in this app, so it's set once here rather than
-          per screen, where it had only ever been set on the login screen. */}
-      <StatusBar style="light" />
+      {/* Every screen now opens on a white or light header, so the clock and
+          battery icons are dark. The dark screens (splash, QR scanner) set
+          their own light bar while they are up. */}
+      <StatusBar style="dark" />
       <AppAlertProvider>
         <AuthProvider>
           <NavigationContainer>
