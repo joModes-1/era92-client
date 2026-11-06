@@ -1,18 +1,24 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
 import { api } from '../../api';
-import { colors, radii, font, spacing, weight, tracking } from '../../theme';
-import Icon from '../../components/Icon';
-import ScreenHeader, { HeaderAction } from '../../components/ScreenHeader';
-import Badge from '../../components/Badge';
+import { colors, spacing, weight, jk } from '../../theme';
 import { useAppAlert } from '../../components/AppAlert';
-import { Surface, SectionHeader, EmptyState, SkeletonList, Field, FormSheet } from '../../components/ui';
+import { Field, FormSheet } from '../../components/ui';
+import AdminScreen from '../../components/admin/AdminScreen';
+import {
+  Card, Grid2, Stat, Pill, PillTone, Btn, IconBtn, Search, Hr, Row, kitStyles,
+} from '../../components/admin/kit';
+import { isoLocal, compact } from './adminData';
 
+/**
+ * Branches, after the design canvas: a search, two totals, and a card per
+ * branch with its manager, team size, today's washes and takings and one
+ * status pill. Adding a branch works as before.
+ */
 export default function BranchesScreen() {
   const alert = useAppAlert();
-  const [branches, setBranches] = useState<any[]>([]);
-  const [loaded, setLoaded] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
+  const [data, setData] = useState<any>(null);
+  const [query, setQuery] = useState('');
   const [createVisible, setCreateVisible] = useState(false);
   const [creating, setCreating] = useState(false);
 
@@ -22,19 +28,15 @@ export default function BranchesScreen() {
   const [phone, setPhone] = useState('');
 
   const load = useCallback(async () => {
-    try {
-      const data = await api.listBranches();
-      setBranches(Array.isArray(data) ? data : []);
-    } catch {}
+    const today = isoLocal(new Date());
+    const [b, s, r, st] = await Promise.allSettled([
+      api.listBranches(), api.listStaff(), api.branches(today, today), api.stale(),
+    ]);
+    const v = (x: PromiseSettledResult<any>, f: any) => (x.status === 'fulfilled' && x.value ? x.value : f);
+    setData({ branches: v(b, []), staff: v(s, []), today: v(r, []), stale: v(st, {}) });
   }, []);
 
-  useEffect(() => { (async () => { await load(); setLoaded(true); })(); }, [load]);
-
-  const onRefresh = async () => {
-    setRefreshing(true);
-    await load();
-    setRefreshing(false);
-  };
+  useEffect(() => { load(); }, [load]);
 
   const resetForm = () => { setName(''); setCode(''); setAddress(''); setPhone(''); };
 
@@ -61,94 +63,71 @@ export default function BranchesScreen() {
     setCreating(false);
   };
 
-  if (!loaded) {
-    return (
-      <View style={styles.container}>
-        <ScreenHeader title="Branches" />
-        <ScrollView contentContainerStyle={styles.body}><SkeletonList rows={3} showHeader={false} /></ScrollView>
-      </View>
-    );
-  }
+  const branches: any[] = data?.branches || [];
+  const staff: any[] = data?.staff || [];
+  const todayBy = new Map<string, any>((data?.today || []).map((r: any) => [r.branch_id, r]));
+  const stuck = [...(data?.stale?.long_in_progress || []), ...(data?.stale?.stale_ready || [])];
+  const activeCount = branches.filter((b) => b.status === 'active').length;
+  const teamTotal = branches.reduce((t, b) => t + Number(b.staff_count || 0), 0);
+  const q = query.trim().toLowerCase();
+  const shown = branches.filter((b) => !q || `${b.name} ${b.code} ${b.address || ''}`.toLowerCase().includes(q));
 
-  const active = branches.filter((b: any) => b.status === 'active').length;
+  const card = (b: any) => {
+    const isActive = b.status === 'active';
+    const manager = staff.find((s) => s.branch_id === b.id && s.role === 'manager' && s.status === 'active');
+    const t = todayBy.get(b.id);
+    const washes = Number(t?.washes || 0);
+    const stuckHere = stuck.filter((w: any) => w.branch_name === b.name).length;
+    let pill: { tone: PillTone; label: string } = { tone: 'ok', label: 'Clear' };
+    if (!isActive) pill = { tone: 'neutral', label: 'Inactive' };
+    else if (stuckHere) pill = { tone: 'bad', label: `${stuckHere} stuck` };
+    else if (Number(t?.total_variance || 0) < 0) pill = { tone: 'warn', label: 'Variance' };
+    else if (Number(t?.disputes || 0) > 0) pill = { tone: 'info', label: `${t.disputes} dispute${Number(t.disputes) > 1 ? 's' : ''}` };
+    else if (!manager) pill = { tone: 'neutral', label: 'No manager' };
+    const team = Number(b.staff_count || 0);
+    return (
+      <Card key={b.id}>
+        <View style={styles.head}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.name} numberOfLines={1}>{b.name}</Text>
+            <Text style={kitStyles.k} numberOfLines={1}>
+              {manager ? `Manager: ${manager.full_name}` : 'Manager not assigned'} · {team} staff
+              {Number(b.suspended_staff_count) > 0 ? ` (+${b.suspended_staff_count} suspended)` : ''}
+            </Text>
+          </View>
+          <Pill tone={pill.tone} label={pill.label} />
+        </View>
+        {b.address ? <Text style={[kitStyles.k, { marginTop: 4 }]} numberOfLines={1}>{b.code} · {b.address}</Text> : null}
+        <Hr />
+        <View style={kitStyles.between}>
+          <Text style={kitStyles.k}>Today</Text>
+          <Text style={styles.amt}>{washes} wash{washes === 1 ? '' : 'es'} · {compact(Number(t?.gross_ugx || 0))}</Text>
+        </View>
+      </Card>
+    );
+  };
 
   return (
-    <View style={styles.container}>
-      <ScreenHeader
-        title="Branches"
-        subtitle={`${active} active of ${branches.length}`}
-        action={<HeaderAction icon="plus" onPress={() => setCreateVisible(true)} />}
-      />
+    <AdminScreen
+      title="Branches"
+      subtitle={data ? `${activeCount} active of ${branches.length}` : undefined}
+      loading={!data}
+      onRefresh={load}
+      right={<IconBtn icon="plus" label="Add branch" onPress={() => setCreateVisible(true)} />}
+    >
+      <Search value={query} onChange={setQuery} placeholder="Search branches" />
+      <Grid2>
+        <Stat label="Branches" value={String(activeCount)} sub={branches.length > activeCount ? `${branches.length - activeCount} inactive` : 'All active'} />
+        <Stat label="Staff" value={String(teamTotal)} sub="Across every branch" />
+      </Grid2>
 
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={styles.body}
-        showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} />}
-      >
-        {branches.length === 0 ? (
-          <Surface elevation="sm" padded="lg">
-            <EmptyState icon="building" title="No branches yet" message="Add your first location to start taking washes." />
-          </Surface>
-        ) : (
-          <>
-            <SectionHeader title="Locations" count={branches.length} icon="map-marker-alt" />
-            <View style={{ gap: spacing.sm }}>
-              {branches.map((b: any) => {
-                const isActive = b.status === 'active';
-                return (
-                  <Surface key={b.id} elevation="sm" style={styles.card}>
-                    <View style={styles.head}>
-                      <View style={[styles.codeTag, !isActive && styles.codeTagOff]}>
-                        <Text style={styles.codeText}>{b.code}</Text>
-                      </View>
-                      <Text style={styles.name} numberOfLines={1}>{b.name}</Text>
-                      <Badge
-                        label={isActive ? 'Active' : 'Inactive'}
-                        tone={isActive ? 'success' : 'neutral'}
-                        dot
-                        small
-                      />
-                    </View>
+      {shown.length ? shown.map(card) : (
+        <Card flush>
+          <Row title={branches.length ? 'No branch matches' : 'No branches yet'} sub={branches.length ? 'Try another name or code' : 'Add your first location to start taking washes'} last />
+        </Card>
+      )}
 
-                    {(b.address || b.phone) && (
-                      <View style={styles.details}>
-                        {b.address ? (
-                          <View style={styles.detailRow}>
-                            <Icon name="map-marker-alt" size={10} color={colors.textMuted} />
-                            <Text style={styles.detailText} numberOfLines={1}>{b.address}</Text>
-                          </View>
-                        ) : null}
-                        {b.phone ? (
-                          <View style={styles.detailRow}>
-                            <Icon name="phone" size={10} color={colors.textMuted} />
-                            <Text style={styles.detailText}>{b.phone}</Text>
-                          </View>
-                        ) : null}
-                      </View>
-                    )}
-
-                    <View style={styles.foot}>
-                      <Icon name="users" size={11} color={colors.textSecondary} />
-                      <Text style={styles.staffCount}>
-                        <Text style={styles.staffNum}>{b.staff_count ?? 0}</Text> staff
-                      </Text>
-                      {/* Suspended accounts are no longer counted above — but
-                          they still exist, so say so rather than making them
-                          vanish from the branch entirely. */}
-                      {Number(b.suspended_staff_count) > 0 && (
-                        <Text style={styles.suspendedNote}>
-                          +{b.suspended_staff_count} suspended
-                        </Text>
-                      )}
-                    </View>
-                  </Surface>
-                );
-              })}
-            </View>
-          </>
-        )}
-      </ScrollView>
+      <Btn primary icon="plus" title="Add branch" onPress={() => setCreateVisible(true)} />
 
       <FormSheet
         visible={createVisible}
@@ -173,32 +152,12 @@ export default function BranchesScreen() {
         <Field label="Address" value={address} onChangeText={setAddress} placeholder="123 Ntinda Road" />
         <Field label="Phone" value={phone} onChangeText={setPhone} placeholder="+256700000000" keyboardType="phone-pad" />
       </FormSheet>
-    </View>
+    </AdminScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.bg },
-  scroll: { flex: 1 },
-  body: { padding: spacing.lg, paddingBottom: spacing.xxxl, gap: spacing.md },
-
-  card: { gap: spacing.md },
-  head: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  codeTag: { backgroundColor: colors.ink[900], borderRadius: 5, paddingHorizontal: 7, paddingVertical: 3 },
-  codeTagOff: { backgroundColor: colors.ink[400] },
-  codeText: { fontSize: font.micro, fontWeight: weight.black, color: '#fff', letterSpacing: tracking.caps },
-  name: { flex: 1, fontSize: font.regular, fontWeight: weight.heavy, color: colors.text, letterSpacing: tracking.tight },
-
-  details: { gap: 5 },
-  detailRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
-  detailText: { flex: 1, fontSize: font.sm, color: colors.textSecondary },
-
-  foot: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    paddingTop: spacing.md,
-    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.borderLight,
-  },
-  staffCount: { fontSize: font.sm, color: colors.textSecondary },
-  staffNum: { fontWeight: weight.heavy, color: colors.text },
-  suspendedNote: { fontSize: font.micro, color: colors.textMuted, marginLeft: 4 },
+  head: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  name: { fontSize: 16, lineHeight: 22, ...jk.semibold, color: colors.text },
+  amt: { fontSize: 15, ...jk.semibold, color: colors.text },
 });

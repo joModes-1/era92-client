@@ -2,6 +2,9 @@ import 'react-native-gesture-handler';
 import React from 'react';
 import * as SplashScreen from 'expo-splash-screen';
 import { useFonts, Poppins_900Black_Italic } from '@expo-google-fonts/poppins';
+import {
+  PlusJakartaSans_500Medium, PlusJakartaSans_600SemiBold, PlusJakartaSans_700Bold, PlusJakartaSans_800ExtraBold,
+} from '@expo-google-fonts/plus-jakarta-sans';
 import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -37,8 +40,6 @@ import WorkersReportScreen from './src/screens/manager/WorkersReportScreen';
 import VarianceReportScreen from './src/screens/manager/VarianceReportScreen';
 import StaleReportScreen from './src/screens/manager/StaleReportScreen';
 import ExceptionsReportScreen from './src/screens/manager/ExceptionsReportScreen';
-import HandoversReportScreen from './src/screens/manager/HandoversReportScreen';
-import CancellationsReportScreen from './src/screens/manager/CancellationsReportScreen';
 import StaffScreen from './src/screens/manager/StaffScreen';
 import CashHandoverScreen from './src/screens/manager/CashHandoverScreen';
 import ManagerDashboardScreen from './src/screens/manager/ManagerDashboardScreen';
@@ -50,12 +51,15 @@ import BillingScreen from './src/screens/sysadmin/BillingScreen';
 import OrgDetailScreen from './src/screens/sysadmin/OrgDetailScreen';
 
 import OrgDashboardScreen from './src/screens/orgadmin/DashboardScreen';
+import LiveJobsScreen from './src/screens/orgadmin/LiveJobsScreen';
+import OrgCashScreen from './src/screens/orgadmin/CashScreen';
+import OrgAlertsScreen from './src/screens/orgadmin/AlertsScreen';
+import OrgReportsScreen from './src/screens/orgadmin/ReportsScreen';
 import OrgBranchesScreen from './src/screens/orgadmin/BranchesScreen';
 import OrgCatalogueScreen from './src/screens/orgadmin/CatalogueScreen';
 import OrgPricesScreen from './src/screens/orgadmin/OrgPricesScreen';
 import PointsSettingsScreen from './src/screens/orgadmin/PointsSettingsScreen';
 import CustomersScreen from './src/screens/orgadmin/CustomersScreen';
-import AuditLogScreen from './src/screens/orgadmin/AuditLogScreen';
 
 import ClientHome from './src/screens/client/ClientHome';
 import HistoryScreen from './src/screens/client/HistoryScreen';
@@ -115,8 +119,6 @@ function ManagerDrawer() {
       <Drawer.Screen name="Cash Variance" component={VarianceReportScreen} />
       <Drawer.Screen name="Stale Alerts" component={StaleReportScreen} />
       <Drawer.Screen name="Exceptions" component={ExceptionsReportScreen} />
-      <Drawer.Screen name="Handovers" component={HandoversReportScreen} />
-      <Drawer.Screen name="Cancellations" component={CancellationsReportScreen} />
       <Drawer.Screen name="Staff" component={StaffScreen} />
       <Drawer.Screen name="Catalogue" component={OrgCatalogueScreen} />
       <Drawer.Screen name="Prices" component={OrgPricesScreen} />
@@ -131,21 +133,21 @@ function OrgadminDrawer() {
   return (
     <Drawer.Navigator screenOptions={drawerScreenOptions} drawerContent={(p) => <AppDrawerContent {...p} />}>
       <Drawer.Screen name="Home" component={OrgDashboardScreen} />
-      <Drawer.Screen name="Cash Handover" component={CashHandoverScreen} />
+      <Drawer.Screen name="Live Jobs" component={LiveJobsScreen} />
+      <Drawer.Screen name="Cash" component={OrgCashScreen} />
+      <Drawer.Screen name="Reports" component={OrgReportsScreen} />
       <Drawer.Screen name="Branches" component={OrgBranchesScreen} />
       <Drawer.Screen name="Staff" component={StaffScreen} />
       <Drawer.Screen name="Catalogue" component={OrgCatalogueScreen} />
       <Drawer.Screen name="Prices" component={OrgPricesScreen} />
       <Drawer.Screen name="Points Settings" component={PointsSettingsScreen} />
       <Drawer.Screen name="Customers" component={CustomersScreen} />
-      <Drawer.Screen name="Daily Report" component={DailyReportScreen} />
       <Drawer.Screen name="Performance" component={WorkersReportScreen} />
       <Drawer.Screen name="Cash Variance" component={VarianceReportScreen} />
       <Drawer.Screen name="Stale Alerts" component={StaleReportScreen} />
       <Drawer.Screen name="Exceptions" component={ExceptionsReportScreen} />
-      <Drawer.Screen name="Handovers" component={HandoversReportScreen} />
-      <Drawer.Screen name="Cancellations" component={CancellationsReportScreen} />
-      <Drawer.Screen name="Audit Log" component={AuditLogScreen} />
+      {/* Reached from Home's bell and "See all alerts" — see HIDDEN_ROUTES. */}
+      <Drawer.Screen name="Alerts" component={OrgAlertsScreen} />
       <Drawer.Screen name="Report a problem" component={ReportIssueScreen} />
       <Drawer.Screen name="Profile" component={ProfileScreen} />
     </Drawer.Navigator>
@@ -311,7 +313,10 @@ export default function App() {
   // frames just leaves the native splash up a moment longer, rather than
   // letting text flash in the system font and re-flow once the real faces
   // arrive.
-  const [fontsLoaded] = useFonts({ Poppins_900Black_Italic });
+  const [fontsLoaded] = useFonts({
+    Poppins_900Black_Italic,
+    PlusJakartaSans_500Medium, PlusJakartaSans_600SemiBold, PlusJakartaSans_700Bold, PlusJakartaSans_800ExtraBold,
+  });
   if (!fontsLoaded) return null;
 
   // SafeAreaProvider must sit above everything: React Navigation reads its

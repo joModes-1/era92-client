@@ -1,21 +1,22 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
 import { useAuth } from '../../api/AuthContext';
 import { api } from '../../api';
 import { colors, radii, spacing, weight, staffType, staffText } from '../../theme';
-import ScreenHeader from '../../components/ScreenHeader';
-import GradientButton from '../../components/GradientButton';
 import Icon from '../../components/Icon';
 import { useAppAlert } from '../../components/AppAlert';
+import { Field, PillPicker, FormSheet, Avatar } from '../../components/ui';
+import AdminScreen from '../../components/admin/AdminScreen';
 import {
-  Surface, SectionHeader, EmptyState, SkeletonList,
-  Field, PillPicker, FormSheet, Avatar,
-} from '../../components/ui';
+  Card, Section, Row, Pill, PillTone, Chip, Chips, Seg, Btn, IconBtn, Search,
+} from '../../components/admin/kit';
+import { compact } from '../orgadmin/adminData';
 
 type Role = 'orgadmin' | 'manager' | 'worker';
+type Filter = 'all' | 'manager' | 'worker';
 
 const ROLE_LABEL: Record<Role, string> = { orgadmin: 'Org Admin', manager: 'Manager', worker: 'Worker' };
-const GROUP_LABEL: Record<Role, string> = { orgadmin: 'Org admins', manager: 'Managers', worker: 'Workers' };
+const ROLE_PILL: Record<Role, PillTone> = { orgadmin: 'info', manager: 'info', worker: 'neutral' };
 
 /** +256706965418 → 070 696 5418, matching how the server reads it back. */
 function displayPhone(e164: string): string {
@@ -25,53 +26,57 @@ function displayPhone(e164: string): string {
   return `0${n.slice(0, 2)} ${n.slice(2, 5)} ${n.slice(5)}`;
 }
 
+/**
+ * Staff, after the design canvas: search, a branch filter (org admin), the
+ * team split into managers and workers, grouped by branch, each person with
+ * their sign-in phone, any cash they hold and their role. Tapping someone
+ * suspends or re-activates them, with a confirm; nothing here deletes.
+ */
 export default function StaffScreen() {
   const { actor } = useAuth();
   const alert = useAppAlert();
   const isOrgAdmin = actor?.role === 'orgadmin';
   // Backend rule (staffRoutes.ts): orgadmin may create orgadmin/manager/worker;
   // manager may create worker only, in their own branch.
-  const assignableRoles: Role[] = isOrgAdmin ? ['orgadmin', 'manager', 'worker'] : ['worker'];
+  const assignableRoles: Role[] = isOrgAdmin ? ['worker', 'manager', 'orgadmin'] : ['worker'];
 
   const [staff, setStaff] = useState<any[]>([]);
   const [branches, setBranches] = useState<any[]>([]);
+  const [holds, setHolds] = useState<Map<string, number>>(new Map());
   const [loaded, setLoaded] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
   const [createVisible, setCreateVisible] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
+  const [filter, setFilter] = useState<Filter>('all');
+  const [branchFilter, setBranchFilter] = useState<string | null>(null);
 
   // Create-staff form state
   const [fullName, setFullName] = useState('');
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
-  const [role, setRole] = useState<Role>(assignableRoles[assignableRoles.length - 1]);
+  const [role, setRole] = useState<Role>('worker');
   const [branchId, setBranchId] = useState<string>(actor?.branch_id || '');
   const [creating, setCreating] = useState(false);
 
   const load = useCallback(async () => {
-    try {
-      const [s, b] = await Promise.allSettled([api.listStaff(), api.listBranches()]);
-      if (s.status === 'fulfilled') setStaff(s.value);
-      if (b.status === 'fulfilled') setBranches(b.value);
-    } catch {}
+    const [s, b, w] = await Promise.allSettled([api.listStaff(), api.listBranches(), api.listWallets()]);
+    if (s.status === 'fulfilled') setStaff(s.value || []);
+    if (b.status === 'fulfilled') setBranches(b.value || []);
+    if (w.status === 'fulfilled' && w.value) {
+      setHolds(new Map((w.value.staff || []).map((x: any) => [x.staff_id, Number(x.owes_ugx || 0)])));
+    }
   }, []);
 
   useEffect(() => { (async () => { await load(); setLoaded(true); })(); }, [load]);
-
-  const onRefresh = async () => {
-    setRefreshing(true);
-    await load();
-    setRefreshing(false);
-  };
 
   const resetForm = () => {
     setFullName('');
     setUsername('');
     setEmail('');
     setPhone('');
-    setRole(assignableRoles[assignableRoles.length - 1]);
-    setBranchId(isOrgAdmin ? '' : (actor?.branch_id || ''));
+    setRole('worker');
+    setBranchId(isOrgAdmin ? (branchFilter || '') : (actor?.branch_id || ''));
   };
 
   const openCreate = () => {
@@ -84,7 +89,7 @@ export default function StaffScreen() {
       alert('Missing details', 'Full name and username are required.');
       return;
     }
-    // Phone is the sign-in identity now — an account without one cannot be
+    // Phone is the sign-in identity — an account without one cannot be
     // signed into at all, so it is checked here rather than left to the
     // server to reject after the form has been filled in.
     if (phone.replace(/\D/g, '').length < 9) {
@@ -143,106 +148,105 @@ export default function StaffScreen() {
     );
   };
 
-  if (!loaded) {
-    return (
-      <View style={styles.container}>
-        <ScreenHeader title="Staff" />
-        <ScrollView contentContainerStyle={styles.body}><SkeletonList rows={5} showHeader={false} /></ScrollView>
-      </View>
-    );
-  }
+  const roleOf = (s: any): Role => (s.role === 'orgadmin' || s.role === 'manager' ? s.role : 'worker');
+  const q = query.trim().toLowerCase();
+  const digits = q.replace(/\D/g, '');
+  const matches = (s: any) => !q
+    || String(s.full_name).toLowerCase().includes(q)
+    || (digits.length >= 3 && String(s.phone || '').replace(/\D/g, '').includes(digits));
+  const inScope = staff.filter((s) => matches(s) && (!branchFilter || s.branch_id === branchFilter));
+  const managersN = inScope.filter((s) => roleOf(s) !== 'worker').length;
+  const workersN = inScope.filter((s) => roleOf(s) === 'worker').length;
+  const shown = inScope.filter((s) => filter === 'all' || (filter === 'manager' ? roleOf(s) !== 'worker' : roleOf(s) === 'worker'));
 
-  // The working team first, grouped by role so the hierarchy reads at a
-  // glance; suspended accounts collect in one group at the end. They used to
-  // sit among the active workers — first, as it happened — each on its own
-  // tall card, so a crew of twenty took a dozen screens to scan.
-  const order: Role[] = ['orgadmin', 'manager', 'worker'];
-  const active = staff.filter((s: any) => s.status === 'active');
-  const suspended = staff.filter((s: any) => s.status !== 'active');
-  const roleOf = (s: any): Role => (order.includes(s.role) ? s.role : 'worker');
-  const grouped = order
-    .map((r) => ({ key: r, title: GROUP_LABEL[r], members: active.filter((s: any) => roleOf(s) === r) }))
-    .filter((g) => g.members.length > 0);
-  if (suspended.length) grouped.push({ key: 'suspended' as Role, title: 'Suspended', members: suspended });
+  // Grouped by branch, managers first, suspended people last in each group.
+  const rank = (s: any) => (s.status === 'active' ? 0 : 10) + (roleOf(s) === 'orgadmin' ? 0 : roleOf(s) === 'manager' ? 1 : 2);
+  const groups = new Map<string, { title: string; members: any[] }>();
+  shown.forEach((s) => {
+    const key = s.branch_id || 'org';
+    if (!groups.has(key)) groups.set(key, { title: s.branch_name || 'Head office', members: [] });
+    groups.get(key)!.members.push(s);
+  });
+  const grouped = [...groups.values()]
+    .map((g) => ({ ...g, members: g.members.sort((a, b) => rank(a) - rank(b) || String(a.full_name).localeCompare(b.full_name)) }))
+    .sort((a, b) => (a.title === 'Head office' ? -1 : b.title === 'Head office' ? 1 : a.title.localeCompare(b.title)));
 
-  // The row shows who they are and a status word; suspending sits one tap
-  // in (with its own confirm), not as a red button on every row — a
-  // destructive action is never the loudest thing in a list (Apple HIG,
-  // Polaris). Suspend keeps their history; nothing here deletes.
-  const renderMember = (s: any, i: number, list: any[]) => {
+  const activeCount = staff.filter((s) => s.status === 'active').length;
+
+  const member = (s: any, i: number, list: any[]) => {
     const isActive = s.status === 'active';
-    const busy = busyId === s.id;
+    const held = holds.get(s.id) || 0;
+    const sub = [
+      s.phone ? displayPhone(s.phone) : 'No phone — cannot sign in',
+      held > 0 ? `holds ${compact(held)}` : '',
+    ].filter(Boolean).join(' · ');
     return (
-      <TouchableOpacity
+      <Row
         key={s.id}
-        style={[styles.row, i < list.length - 1 && styles.rowBorder]}
+        leading={<Avatar name={s.full_name} size={40} variant={isActive ? 'soft' : 'muted'} />}
+        title={s.full_name}
+        titleStyle={!isActive ? { color: staffText.secondary } : undefined}
+        sub={sub}
+        trailing={busyId === s.id
+          ? <ActivityIndicator size="small" color={colors.primary} />
+          : <Pill tone={isActive ? ROLE_PILL[roleOf(s)] : 'bad'} label={isActive ? ROLE_LABEL[roleOf(s)] : 'Suspended'} />}
         onPress={() => toggleStatus(s)}
-        activeOpacity={0.7}
-        disabled={busy}
-        accessibilityRole="button"
-        accessibilityLabel={`${s.full_name}, ${isActive ? 'active' : 'suspended'}. ${isActive ? 'Suspend' : 'Activate'}`}
-      >
-        <Avatar name={s.full_name} size={38} variant={isActive ? 'soft' : 'muted'} />
-        <View style={styles.who}>
-          <Text style={[styles.name, !isActive && styles.nameOff]} numberOfLines={1}>{s.full_name}</Text>
-          {/* Phone leads: it is how they sign in. A missing one is called
-              out rather than left blank, because that account cannot be
-              signed into. */}
-          <Text style={[styles.meta, !s.phone && styles.metaWarn]} numberOfLines={1}>
-            {s.phone ? displayPhone(s.phone) : 'No phone — cannot sign in'}
-            {s.branch_name ? ` · ${s.branch_name}` : ''}
-            {!isActive && s.role ? ` · ${ROLE_LABEL[roleOf(s)]}` : ''}
-          </Text>
-        </View>
-        {busy ? (
-          <ActivityIndicator size="small" color={colors.primary} />
-        ) : (
-          <View style={[styles.status, isActive ? styles.statusOn : styles.statusOff]}>
-            <Text style={[styles.statusText, { color: isActive ? colors.successText : staffText.secondary }]}>
-              {isActive ? 'Active' : 'Suspended'}
-            </Text>
-          </View>
-        )}
-        <Icon name="chevron-right" size={14} color={staffText.muted} />
-      </TouchableOpacity>
+        last={i === list.length - 1}
+      />
     );
   };
 
   return (
-    <View style={styles.container}>
-      <ScreenHeader
-        title="Staff"
-        subtitle={`${active.length} active of ${staff.length}`}
+    <AdminScreen
+      title="Staff"
+      subtitle={loaded ? `${activeCount} active of ${staff.length}` : undefined}
+      loading={!loaded}
+      onRefresh={load}
+      right={<IconBtn icon="user-plus" label="Add staff member" onPress={openCreate} />}
+    >
+      <Search value={query} onChange={setQuery} placeholder="Search by name or phone" />
+
+      {isOrgAdmin && branches.length > 1 ? (
+        <Chips>
+          <Chip label="All branches" on={!branchFilter} onPress={() => setBranchFilter(null)} />
+          {branches.map((b: any) => (
+            <Chip key={b.id} label={b.name} on={branchFilter === b.id} onPress={() => setBranchFilter(b.id)} />
+          ))}
+        </Chips>
+      ) : null}
+
+      <Seg
+        value={filter}
+        onChange={setFilter}
+        options={[
+          { value: 'all', label: `Everyone ${inScope.length}` },
+          { value: 'manager', label: `Managers ${managersN}` },
+          { value: 'worker', label: `Workers ${workersN}` },
+        ]}
       />
 
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={styles.body}
-        showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} />}
-      >
-        <GradientButton title="Add staff member" variant="tonal" icon="user-plus" onPress={openCreate} full />
+      {grouped.length === 0 ? (
+        <Card flush>
+          <Row
+            title={staff.length ? 'Nobody matches' : 'No staff yet'}
+            sub={staff.length ? 'Try another name, phone or branch' : 'Add your first team member to get started'}
+            last
+          />
+        </Card>
+      ) : grouped.map((g) => (
+        <View key={g.title} style={{ gap: 14 }}>
+          <Section title={g.title} />
+          <Card flush>{g.members.map((s, i) => member(s, i, g.members))}</Card>
+        </View>
+      ))}
 
-        {staff.length === 0 ? (
-          <Surface elevation="sm" padded="lg">
-            <EmptyState icon="users" title="No staff yet" message="Add your first team member to get started." />
-          </Surface>
-        ) : (
-          grouped.map((g) => (
-            <View key={g.key}>
-              <SectionHeader title={g.title} count={g.members.length} />
-              <Surface elevation="sm" padded="sm" style={[styles.listCard, g.key === ('suspended' as Role) && styles.listCardOff]}>
-                {g.members.map((s: any, i: number) => renderMember(s, i, g.members))}
-              </Surface>
-            </View>
-          ))
-        )}
-      </ScrollView>
+      <Btn primary icon="user-plus" title="Add staff member" onPress={openCreate} />
+
 
       <FormSheet
         visible={createVisible}
         onClose={() => setCreateVisible(false)}
-        title="New staff member"
+        title="Add staff"
         subtitle="They sign in with their phone and a one-time code"
         submitLabel="Create staff"
         onSubmit={submitCreate}
@@ -250,13 +254,13 @@ export default function StaffScreen() {
       >
         <Field label="Full name" required value={fullName} onChangeText={setFullName} placeholder="e.g. Sarah N." />
         <Field
-          label="Phone"
+          label="Phone number"
           required
           value={phone}
           onChangeText={setPhone}
-          placeholder="0700 000 000"
+          placeholder="07XX XXX XXX"
           keyboardType="phone-pad"
-          hint="How they sign in — a code is texted to this number."
+          hint="Used to sign in, and to call about cash and jobs."
         />
         <Field
           label="Username"
@@ -279,12 +283,10 @@ export default function StaffScreen() {
         />
 
         {assignableRoles.length > 1 && (
-          <PillPicker
-            label="Role"
-            value={role}
-            onChange={setRole}
-            options={assignableRoles.map((r) => ({ value: r, label: ROLE_LABEL[r] }))}
-          />
+          <View style={styles.field}>
+            <Text style={styles.label}>Role</Text>
+            <Seg value={role} onChange={setRole} options={assignableRoles.map((r) => ({ value: r, label: ROLE_LABEL[r] }))} />
+          </View>
         )}
 
         {role !== 'orgadmin' && (
@@ -296,8 +298,8 @@ export default function StaffScreen() {
               options={branches.map((b: any) => ({ value: b.id, label: b.name }))}
             />
           ) : (
-            <View style={styles.locked}>
-              <Text style={styles.lockedLabel}>Branch</Text>
+            <View style={styles.field}>
+              <Text style={styles.label}>Branch</Text>
               <View style={styles.lockedRow}>
                 <Icon name="lock" size={14} color={colors.textMuted} />
                 <Text style={styles.lockedText}>{actor?.branch_name || 'Your branch'}</Text>
@@ -306,32 +308,13 @@ export default function StaffScreen() {
           )
         )}
       </FormSheet>
-    </View>
+    </AdminScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.bg },
-  scroll: { flex: 1 },
-  body: { padding: spacing.lg, paddingBottom: spacing.xxxl, gap: spacing.xl },
-
-  listCard: { paddingHorizontal: spacing.md },
-  listCardOff: { backgroundColor: colors.bg },
-  row: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: spacing.md, minHeight: 60 },
-  rowBorder: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.borderLight },
-  who: { flex: 1, gap: 2 },
-  name: { ...staffType.rowTitle, fontSize: 16 },
-  nameOff: { color: staffText.secondary },
-  meta: { ...staffType.meta },
-  metaWarn: { color: colors.warningText, fontWeight: weight.semibold },
-
-  status: { borderRadius: radii.full, paddingHorizontal: 9, paddingVertical: 3 },
-  statusOn: { backgroundColor: colors.successSoft },
-  statusOff: { backgroundColor: colors.bgSunken },
-  statusText: { ...staffType.caption },
-
-  locked: { gap: 6, marginBottom: spacing.lg },
-  lockedLabel: { ...staffType.label, color: staffText.secondary },
+  field: { gap: 6, marginBottom: spacing.lg },
+  label: { ...staffType.label, color: staffText.secondary },
   lockedRow: {
     flexDirection: 'row', alignItems: 'center', gap: 7,
     backgroundColor: colors.bgSunken, borderRadius: radii.md,

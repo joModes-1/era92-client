@@ -183,7 +183,7 @@ export default function ManagerDashboardScreen() {
       { label: 'Cars washed', value: cars.toLocaleString(), go: 'Daily Report', icon: 'car', tone: 'primary' as Tone },
       { label: 'Avg per car', value: `UGX ${ugx(avg)}`, go: 'Daily Report', icon: 'coins', tone: 'success' as Tone },
       { label: 'Free washes', value: Number(summary.redemption_count || 0).toLocaleString(), go: 'Daily Report', icon: 'gift', tone: 'accent' as Tone },
-      { label: 'Cancelled', value: Number(summary.cancelled_washes || 0).toLocaleString(), go: 'Cancellations', icon: 'times-circle', tone: 'error' as Tone },
+      { label: 'Cancelled', value: Number(summary.cancelled_washes || 0).toLocaleString(), go: 'Exceptions', params: { filter: 'cancellation' }, icon: 'times-circle', tone: 'error' as Tone },
     ];
 
   return (
@@ -232,7 +232,7 @@ export default function ManagerDashboardScreen() {
         {/* ── Tiles ── */}
         <View style={styles.tiles}>
           {tiles.map((t) => (
-            <TouchableOpacity key={t.label} style={styles.tile} activeOpacity={0.75} onPress={() => navigation.navigate(t.go)}>
+            <TouchableOpacity key={t.label} style={styles.tile} activeOpacity={0.75} onPress={() => navigation.navigate(t.go, (t as any).params)}>
               <View style={styles.tileHead}>
                 <View style={[styles.tileIcon, { backgroundColor: toneMap[t.tone].bg }]}>
                   <Icon name={t.icon} size={14} color={toneMap[t.tone].fg} />

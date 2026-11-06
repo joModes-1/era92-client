@@ -1,212 +1,141 @@
-import React from 'react';
+import React, { useCallback, useState } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { api } from '../../api';
-import { colors, font, spacing, weight, tracking, radii, typography } from '../../theme';
-import { ReportScreen, rangeLabel, today, weekAgo } from './reportHelpers';
-import { Surface, SectionHeader, MetricStrip, MiniBar, EmptyState, Avatar, HeroCard } from '../../components/ui';
-import { HeaderStat } from '../../components/ScreenHeader';
-import Icon from '../../components/Icon';
-import Badge from '../../components/Badge';
+import { colors, weight, soft, staffType, jk } from '../../theme';
+import AdminScreen from '../../components/admin/AdminScreen';
+import { useReport } from '../../components/admin/useReport';
+import {
+  Card, Section, Grid2, Stat, Pill, Row, Chip, Chips, Bar, Banner, IconChip, kitStyles,
+} from '../../components/admin/kit';
+import { daysAgo, isoLocal, compact } from '../orgadmin/adminData';
 
-const ugx = (n: any) => `UGX ${Number(n || 0).toLocaleString()}`;
+type Range = 1 | 7 | 30;
+const RANGES: { value: Range; label: string }[] = [
+  { value: 1, label: 'Today' },
+  { value: 7, label: 'This week' },
+  { value: 30, label: '30 days' },
+];
 
+const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]).join('').toUpperCase();
+
+/**
+ * Performance, after the "Lovable" artboard: who washed the most as a
+ * gradient banner, the team's totals, then a leaderboard — rank, initials,
+ * washes with a bar against the leader, branch and cash taken. Anyone with
+ * nothing in the period is listed quietly underneath.
+ */
 export default function WorkersReportScreen() {
-  const from = weekAgo();
-  const to = today();
+  const [range, setRange] = useState<Range>(7);
+  const load = useCallback(async () => {
+    const to = isoLocal(new Date());
+    const from = range === 1 ? to : daysAgo(range - 1);
+    const [workers, staff, durations] = await Promise.allSettled([api.workers(from, to), api.listStaff(), api.durations(from, to)]);
+    const v = (r: PromiseSettledResult<any>, f: any) => (r.status === 'fulfilled' && r.value ? r.value : f);
+    if (workers.status === 'rejected') throw workers.reason;
+    return { workers: v(workers, []) as any[], staff: v(staff, []) as any[], durations: v(durations, []) as any[] };
+  }, [range]);
+  const { data, error, loading, reload } = useReport<{ workers: any[]; staff: any[]; durations: any[] }>(load);
+
+  const branchOf = (id: string) => (data?.staff || []).find((s) => s.id === id)?.branch_name || '';
+  const ranked = [...(data?.workers || [])]
+    .filter((w) => Number(w.washes_started || 0) > 0)
+    .sort((a, b) => Number(b.washes_started) - Number(a.washes_started));
+  const idle = (data?.workers || []).filter((w) => Number(w.washes_started || 0) === 0);
+  const top = ranked[0];
+  const max = Math.max(1, Number(top?.washes_started || 0));
+  const total = ranked.reduce((t, w) => t + Number(w.washes_started || 0), 0);
+  const cash = ranked.reduce((t, w) => t + Number(w.cash_taken_ugx || 0), 0);
+  const dur = data?.durations || [];
+  const n = dur.reduce((t, r) => t + Number(r.count || 0), 0);
+  const avgWash = n ? Math.round(dur.reduce((t, r) => t + Number(r.avg_wash_minutes || 0) * Number(r.count || 0), 0) / n) : null;
+  const word = range === 1 ? 'today' : range === 7 ? 'this week' : 'in the last 30 days';
 
   return (
-    <ReportScreen
-      title="Performance"
-      subtitle={rangeLabel(from, to)}
-      load={() => api.workers(from, to)}
-      headerRail={(data) => {
-        if (!Array.isArray(data) || data.length === 0) return null;
-        const cash = data.reduce((s: number, w: any) => s + Number(w.cash_taken_ugx || 0), 0);
-        const settled = data.reduce((s: number, w: any) => s + Number(w.washes_settled || 0), 0);
-        return (
-          <>
-            <HeaderStat label="Team cash" value={ugx(cash)} icon="coins" />
-            <HeaderStat label="Settled" value={settled} icon="check-circle" />
-          </>
-        );
-      }}
-      render={(data) => {
-        if (!Array.isArray(data)) return null;
-        if (data.length === 0) {
-          return <EmptyState icon="hard-hat" title="No worker activity" message="Nobody logged a wash in this period." />;
-        }
+    <AdminScreen title="Performance" subtitle="Who washed the most" back loading={loading} onRefresh={reload}>
+      <Chips>
+        {RANGES.map((r) => <Chip key={r.value} label={r.label} on={range === r.value} onPress={() => setRange(r.value)} />)}
+      </Chips>
 
-        // Active workers earn the leaderboard treatment; a worker with zero
-        // activity is not "in last place" — they simply had nothing to do
-        // with this period, and giving them equal visual weight as the top
-        // earner is what made the whole screen read as flat, undifferentiated
-        // rows of zeros.
-        const ranked = [...data]
-          .filter((w) => Number(w.washes_started || 0) > 0)
-          .sort((a, b) => Number(b.cash_taken_ugx || 0) - Number(a.cash_taken_ugx || 0));
-        const idle = data.filter((w) => Number(w.washes_started || 0) === 0);
-        const topCash = Math.max(...ranked.map((w) => Number(w.cash_taken_ugx || 0)), 1);
+      {error ? (
+        <Card flush><Row leading={<IconChip icon="exclamation-triangle" tone="error" />} title="Couldn't load performance" sub={error} last /></Card>
+      ) : (
+        <>
+          {top ? (
+            <Banner icon="trophy">
+              <Text style={s.bannerKicker}>TOP WASHER</Text>
+              <Text style={s.bannerName} numberOfLines={1}>{top.full_name}</Text>
+              <Text style={s.bannerSub} numberOfLines={1}>
+                {top.washes_started} washes{branchOf(top.id) ? ` · ${branchOf(top.id)}` : ''}
+              </Text>
+            </Banner>
+          ) : null}
 
-        // A leaderboard is the top of the field, not the whole field. On a
-        // full crew the ranked list ran to a dozen near-identical cards and
-        // the standings stopped being readable, so only the leading six get
-        // the ranked treatment and everyone else is summarised below —
-        // still present and still counted, just not pretending to be a
-        // podium place.
-        const BOARD_SIZE = 6;
-        const board = ranked.slice(0, BOARD_SIZE);
-        const rest = ranked.slice(BOARD_SIZE);
+          <Grid2>
+            <Stat tone="primary" label="Total washes" value={String(total)} sub={word} />
+            <Stat tone="success" label="Avg wash time" value={avgWash === null ? '—' : `${avgWash}m`} sub="Start to done" />
+            <Stat tone="warning" label="Cash taken" value={compact(cash)} sub="UGX by the team" />
+            <Stat tone="info" label="Washing" value={String(ranked.length)} sub={`staff active ${word}`} />
+          </Grid2>
 
-        return (
-          <View style={{ gap: spacing.lg }}>
+          <Section title="Leaderboard" />
+          <Card flush>
             {ranked.length === 0 ? (
-              <EmptyState icon="hard-hat" title="No worker activity" message="Nobody logged a wash in this period." />
-            ) : (
-              <View style={{ gap: spacing.md }}>
-                <SectionHeader title="Leaderboard" count={ranked.length} icon="trophy" />
-
-                {board.map((w: any, i: number) => {
-                  const started = Number(w.washes_started || 0);
-                  const settled = Number(w.washes_settled || 0);
-                  const cash = Number(w.cash_taken_ugx || 0);
-                  const unverified = Number(w.unverified_count || 0);
-                  const inH = Number(w.handovers_received || 0);
-                  const outH = Number(w.handovers_given || 0);
-                  const completion = started > 0 ? Math.round((settled / started) * 100) : 0;
-                  const isTop = i === 0;
-
-                  return isTop ? (
-                    // The top earner gets the screen's one brand card — the
-                    // same hero every role's headline figure uses.
-                    <HeroCard
-                      key={i}
-                      label={w.full_name}
-                      badge={
-                        <View style={styles.topBadge}>
-                          <Icon name="trophy" size={12} color={colors.accent} />
-                          <Text style={styles.topBadgeText}>Top earner</Text>
-                        </View>
-                      }
-                      prefix="UGX"
-                      value={cash.toLocaleString()}
-                      caption={`${completion}% completed · ${started} washes`}
-                      stats={[
-                        { label: 'Settled', value: settled },
-                        { label: 'Taken in', value: inH },
-                        { label: 'Unverified', value: unverified, alert: unverified > 0 },
-                      ]}
-                    />
-                  ) : (
-                    <Surface key={i} elevation="sm" style={styles.card}>
-                      <View style={styles.top}>
-                        <Avatar name={w.full_name} size={40} />
-
-                        <View style={styles.who}>
-                          <Text style={styles.name} numberOfLines={1}>{w.full_name}</Text>
-                          <View style={styles.metaRow}>
-                            <Text style={styles.meta}>{completion}% completed</Text>
-                            {unverified > 0 ? (
-                              <Badge label={`${unverified} unverified`} tone="error" small />
-                            ) : null}
-                          </View>
-                        </View>
-
-                        <View style={styles.cashCol}>
-                          <Text style={styles.cash} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
-                            {cash.toLocaleString()}
-                          </Text>
-                          <Text style={styles.cashUnit}>UGX cash</Text>
-                        </View>
-                      </View>
-
-                      <MiniBar value={cash} max={topCash} color={colors.primaryTint} />
-
-                      <MetricStrip
-                        style={styles.strip}
-                        items={[
-                          { label: 'Started', value: started },
-                          { label: 'Settled', value: settled },
-                          { label: 'Taken in', value: inH },
-                          { label: 'Passed on', value: outH },
-                        ]}
-                      />
-                    </Surface>
-                  );
-                })}
-              </View>
-            )}
-
-            {/* Everyone below the top six. They worked and their cash counts,
-                so they are listed with their number — just not given a
-                podium card, which is what made a full crew unreadable. */}
-            {rest.length > 0 && (
-              <View>
-                <SectionHeader title="Also working" count={rest.length} icon="users" />
-                <Surface elevation="sm" padded="sm" style={{ gap: 0 }}>
-                  {rest.map((w: any, i: number) => (
-                    <View key={i} style={[styles.idleRow, i < rest.length - 1 && styles.idleRowBorder]}>
-                      <Text style={styles.restRank}>{i + BOARD_SIZE + 1}</Text>
-                      <Avatar name={w.full_name} size={28} />
-                      <Text style={styles.idleName} numberOfLines={1}>{w.full_name}</Text>
-                      <Text style={styles.restCash} numberOfLines={1}>
-                        {Number(w.cash_taken_ugx || 0).toLocaleString()}
-                      </Text>
+              <Row leading={<IconChip icon="moon" tone="neutral" />} title="No washes yet" sub={`Nobody started a wash ${word}`} last />
+            ) : ranked.map((w, i) => {
+              const started = Number(w.washes_started || 0);
+              const unverified = Number(w.unverified_count || 0);
+              return (
+                <View key={w.id} style={[s.lr, i === ranked.length - 1 && { borderBottomWidth: 0 }]}>
+                  <Text style={s.rank}>{i + 1}</Text>
+                  <View style={s.av}><Text style={s.avText}>{initials(w.full_name || '?')}</Text></View>
+                  <View style={{ flex: 1 }}>
+                    <View style={kitStyles.between}>
+                      <Text style={s.name} numberOfLines={1}>{w.full_name}</Text>
+                      <Text style={s.count}>{started}</Text>
                     </View>
-                  ))}
-                </Surface>
-              </View>
-            )}
-
-            {/* Idle staff are named, not hidden, but kept visually quiet — a
-                thin roster row instead of a full zeroed-out card each. */}
-            {idle.length > 0 && (
-              <View>
-                <SectionHeader title="No activity this period" count={idle.length} icon="moon" />
-                <Surface elevation="sm" padded="sm" style={{ gap: 0 }}>
-                  {idle.map((w: any, i: number) => (
-                    <View key={i} style={[styles.idleRow, i < idle.length - 1 && styles.idleRowBorder]}>
-                      <Avatar name={w.full_name} size={28} variant="muted" />
-                      <Text style={styles.idleName} numberOfLines={1}>{w.full_name}</Text>
-                      <Text style={styles.idleTag}>Idle</Text>
+                    <Bar fraction={started / max} style={{ marginVertical: 8 }} />
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <Pill tone="warn" icon="coins" label={compact(Number(w.cash_taken_ugx || 0))} />
+                      {branchOf(w.id) ? <Text style={kitStyles.k}>{branchOf(w.id)}</Text> : null}
+                      {unverified ? <Pill tone="bad" label={`${unverified} unconfirmed`} /> : null}
                     </View>
-                  ))}
-                </Surface>
-              </View>
-            )}
-          </View>
-        );
-      }}
-    />
+                  </View>
+                </View>
+              );
+            })}
+          </Card>
+
+          {idle.length > 0 ? (
+            <>
+              <Section title="No washes this period" right={<Pill tone="neutral" label={String(idle.length)} />} />
+              <Card flush>
+                {idle.map((w, i) => (
+                  <Row
+                    key={w.id}
+                    leading={<View style={[s.av, s.avIdle]}><Text style={[s.avText, { color: colors.textSecondary }]}>{initials(w.full_name || '?')}</Text></View>}
+                    title={w.full_name}
+                    sub={branchOf(w.id) || undefined}
+                    last={i === idle.length - 1}
+                  />
+                ))}
+              </Card>
+            </>
+          ) : null}
+        </>
+      )}
+    </AdminScreen>
   );
 }
 
-const styles = StyleSheet.create({
-  card: { gap: spacing.md },
-  top: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  who: { flex: 1, gap: 3 },
-  name: { fontSize: font.regular, fontWeight: weight.heavy, color: colors.text, letterSpacing: tracking.tight },
-  metaRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flexWrap: 'wrap' },
-  meta: { fontSize: font.sm, color: colors.textMuted, fontWeight: weight.medium },
-  cashCol: { alignItems: 'flex-end' },
-  cash: { fontSize: font.xl, fontWeight: weight.black, color: colors.text, letterSpacing: tracking.tight },
-  cashUnit: typography.label,
-  strip: { paddingTop: spacing.xs },
-
-  topBadge: {
-    flexDirection: 'row', alignItems: 'center', gap: 5,
-    backgroundColor: colors.accentSoft,
-    borderRadius: radii.full,
-    paddingHorizontal: 10, paddingVertical: 4,
-  },
-  topBadgeText: { fontSize: 12, fontWeight: weight.semibold, color: colors.accentText },
-
-  // Idle roster
-  idleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: spacing.sm + 2 },
-  idleRowBorder: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.borderLight },
-  idleName: { flex: 1, fontSize: font.regular, color: colors.textSecondary, fontWeight: weight.medium },
-  idleTag: { fontSize: font.xs, fontWeight: weight.semibold, color: colors.textMuted },
-
-  // Fixed width so the rank column stays aligned once it reaches two digits.
-  restRank: { width: 18, fontSize: font.xs, fontWeight: weight.heavy, color: colors.textMuted, textAlign: 'center' },
-  restCash: { fontSize: font.regular, fontWeight: weight.bold, color: colors.text },
+const s = StyleSheet.create({
+  bannerKicker: { fontSize: 12, ...jk.bold, letterSpacing: 0.6, color: 'rgba(255,255,255,0.9)' },
+  bannerName: { fontSize: 22, ...jk.heavy, color: '#fff', marginVertical: 2 },
+  bannerSub: { fontSize: 13, ...jk.medium, color: 'rgba(255,255,255,0.92)' },
+  lr: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: soft.line },
+  rank: { width: 18, fontSize: 14, ...jk.semibold, color: colors.textSecondary, textAlign: 'center' },
+  av: { width: 44, height: 44, borderRadius: 22, backgroundColor: soft.bg, alignItems: 'center', justifyContent: 'center' },
+  avIdle: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.bgSunken },
+  avText: { fontSize: 14, ...jk.bold, color: soft.text },
+  name: { flex: 1, fontSize: 15, ...jk.bold, color: colors.text },
+  count: { fontSize: 15, ...jk.heavy, color: colors.text, ...staffType.tabular },
 });

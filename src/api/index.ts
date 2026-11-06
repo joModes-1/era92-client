@@ -401,6 +401,8 @@ export const api = {
   durations: (from: string, to: string) => req('GET', `/reports/durations?from=${from}&to=${to}`),
   stale: () => req('GET', '/reports/stale'),
   exceptions: (from: string, to: string) => req('GET', `/reports/exceptions?from=${from}&to=${to}`),
+  reviewExceptions: (outcome: 'reviewed' | 'dismissed', items: { wash_id: string; exception_type: string }[]) =>
+    req('POST', '/reports/exceptions/review', { outcome, items }),
   branches: (from: string, to: string) => req('GET', `/reports/branches?from=${from}&to=${to}`),
 
   // Day-by-day series for charting. Every day in the window comes back, zero

@@ -330,6 +330,61 @@ export const tone: Record<Tone, { fg: string; text: string; bg: string; border: 
 };
 
 /**
+ * The richer tints of the admin pages ("Lovable" canvas): tiles, status
+ * pills and icon chips sit on these, a step deeper than `tone`'s washes so a
+ * coloured tile reads as colour on the white of a card. `fg` draws icons,
+ * `text` is type on `bg` (all pass 4.5:1).
+ */
+export const tint: Record<'primary' | 'info' | 'warning' | 'success' | 'error' | 'neutral', { bg: string; fg: string; text: string }> = {
+  primary: { bg: '#F6E9FF', fg: core.violet, text: '#8A12C9' },
+  info:    { bg: '#E8EFFF', fg: '#3B5BDB',   text: '#2447C9' },
+  warning: { bg: '#FFEEDF', fg: '#E8590C',   text: '#A14A06' },
+  success: { bg: '#DDF8EC', fg: '#0B9E62',   text: '#0B7A4B' },
+  error:   { bg: '#FFE6EA', fg: '#E03150',   text: '#C0192B' },
+  neutral: { bg: ink[50],   fg: ink[500],    text: ink[600] },
+};
+
+/**
+ * Plus Jakarta Sans, the admin pages' typeface (loaded in App.tsx). Each
+ * weight is its own font file, so a style takes one of these INSTEAD of a
+ * `fontWeight` — on Android a weight on a custom family falls back to the
+ * system font or fakes the bold.
+ */
+export const jk = {
+  medium: { fontFamily: 'PlusJakartaSans_500Medium' },
+  semibold: { fontFamily: 'PlusJakartaSans_600SemiBold' },
+  bold: { fontFamily: 'PlusJakartaSans_700Bold' },
+  heavy: { fontFamily: 'PlusJakartaSans_800ExtraBold' },
+} as const;
+
+/** Admin surfaces: the soft violet of chips and quiet buttons, card shadow and hairline. */
+export const soft = {
+  /** The admin pages' ground: plain white, cards lifted off it by their shadow. */
+  page: '#FFFFFF',
+  bg: '#F1E3FF',
+  text: '#8A12C9',
+  line: '#F1E9FA',
+  barTrack: '#F6E9FF',
+  note: '#F4E4FF',
+  noteText: '#5C1C84',
+  badge: core.orange,
+  cardShadow: {
+    shadowColor: '#7032C8',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.08,
+    shadowRadius: 24,
+    elevation: 2,
+  },
+  btnShadow: {
+    shadowColor: '#7832DC',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    elevation: 4,
+  },
+};
+
+/**
  * The type hierarchy, as named styles rather than loose size/weight pairs.
  * Sentence case throughout, the way the client app writes — tracked
  * all-caps is kept for nothing but tiny codes (a branch's "NTD").

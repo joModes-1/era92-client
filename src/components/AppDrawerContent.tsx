@@ -21,8 +21,6 @@ const ROUTE_ICON: Record<string, string> = {
   'Cash Handover': 'hand-holding-usd',
   'Stale Alerts': 'exclamation-triangle',
   'Exceptions': 'clipboard-list',
-  'Handovers': 'handshake',
-  'Cancellations': 'times-circle',
   'Staff': 'users',
   'Overview': 'chart-pie',
   'Organizations': 'building',
@@ -32,24 +30,26 @@ const ROUTE_ICON: Record<string, string> = {
   'Profile': 'user-circle',
   'Report a problem': 'life-ring',
   'Home': 'home',
+  'Live Jobs': 'car',
+  'Cash': 'money-bill-wave',
+  'Reports': 'chart-line',
   'Branches': 'building',
   'Catalogue': 'th-large',
   'Prices': 'tags',
   'Points Settings': 'star-half-alt',
   'Customers': 'address-book',
-  'Audit Log': 'shield-alt',
   'Billing': 'file-invoice-dollar',
 };
 
 // Routes registered so they can be navigated to, but which are reached from
 // inside another screen rather than picked off the menu. Listing them here
 // keeps them out of the drawer without a second navigator.
-const HIDDEN_ROUTES = new Set(['Org Detail']);
+const HIDDEN_ROUTES = new Set(['Org Detail', 'Alerts']);
 
 // Grouping gives long role menus a readable structure instead of one flat list.
 const GROUPS: { title: string; routes: string[] }[] = [
-  { title: 'Today', routes: ['Current Car', 'Shift & Queue', 'Home', 'Overview', 'Cash Handover', 'Daily Report'] },
-  { title: 'Reports', routes: ['Performance', 'Cash Variance', 'Stale Alerts', 'Exceptions', 'Handovers', 'Cancellations', 'History', 'Audit Log'] },
+  { title: 'Today', routes: ['Current Car', 'Shift & Queue', 'Home', 'Live Jobs', 'Cash', 'Reports', 'Overview', 'Cash Handover', 'Daily Report'] },
+  { title: 'Reports', routes: ['Performance', 'Cash Variance', 'Stale Alerts', 'Exceptions', 'History'] },
   { title: 'Manage', routes: ['Staff', 'Branches', 'Catalogue', 'Prices', 'Points Settings', 'Customers', 'Organizations', 'Billing', 'Platform Admins'] },
   { title: 'You', routes: ['My Account', 'My Points', 'Leaderboard', 'Points', 'Report a problem', 'Profile'] },
 ];
