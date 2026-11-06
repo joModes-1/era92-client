@@ -345,6 +345,19 @@ export const tint: Record<'primary' | 'info' | 'warning' | 'success' | 'error' |
 };
 
 /**
+ * The phone frame the web app sits in on a wide screen (src/web/phoneFrame):
+ * a phone-sized screen on a soft lavender page, with a deep navy bezel.
+ */
+export const webFrame = {
+  width: 420,
+  maxHeight: 900,
+  radius: 36,
+  bezel: 10,
+  bezelColor: '#16205C',
+  page: '#EEE8F8',
+};
+
+/**
  * Plus Jakarta Sans, the admin pages' typeface (loaded in App.tsx). Each
  * weight is its own font file, so a style takes one of these INSTEAD of a
  * `fontWeight` — on Android a weight on a custom family falls back to the

@@ -12,6 +12,10 @@ import { createDrawerNavigator } from '@react-navigation/drawer';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AuthProvider, useAuth } from './src/api/AuthContext';
 import { AppAlertProvider, useAppAlert } from './src/components/AppAlert';
+import { installPhoneFrame } from './src/web/phoneFrame';
+
+// On a wide browser window, show the app inside a phone-sized frame.
+installPhoneFrame();
 import { useOtaUpdate } from './src/hooks/useOtaUpdate';
 import { usePushNotifications } from './src/hooks/usePushNotifications';
 
