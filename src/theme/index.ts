@@ -345,16 +345,21 @@ export const tint: Record<'primary' | 'info' | 'warning' | 'success' | 'error' |
 };
 
 /**
- * The phone frame the web app sits in on a wide screen (src/web/phoneFrame):
- * a phone-sized screen on a soft lavender page, with a deep navy bezel.
+ * The phone the web app sits in on a wide screen (src/web/phoneFrame): a
+ * real phone screen (390 × 844, status bar included) on a soft lavender
+ * page, with a deep navy bezel and side buttons.
  */
 export const webFrame = {
-  width: 420,
-  maxHeight: 900,
-  radius: 36,
-  bezel: 10,
+  screenW: 390,
+  screenH: 844,
+  statusH: 50,
+  radius: 46,
+  bezel: 12,
   bezelColor: '#16205C',
+  bezelEdge: '#2B3F9E',
   page: '#EEE8F8',
+  /** Below this window width the app fills the window as on a phone. */
+  minWindow: 700,
 };
 
 /**
