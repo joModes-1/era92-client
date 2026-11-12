@@ -135,7 +135,10 @@ export default function ClientHome({ navigation }: any) {
   const statusKey = activeList.map((w: any) => `${w.id}:${w.status}`).join(',');
   useEffect(() => {
     const nowReady = activeList.filter((w: any) => prevStatus.current[w.id] === 'in_progress' && w.status === 'ready');
-    if (nowReady.length > 0) {
+    // A car that owes money opens the payment sheet instead (it says the car
+    // is ready), so this plain alert is only for cars with nothing to pay.
+    const owes = (w: any) => !w.is_redemption && Number(w?.amount_due_ugx ?? w?.quoted_amount_ugx ?? 0) > 0;
+    if (nowReady.length > 0 && !nowReady.some(owes)) {
       const allFree = nowReady.every((w: any) => w.is_redemption);
       alert(
         nowReady.length > 1 ? 'Your cars are ready' : 'Your car is ready',
@@ -158,13 +161,16 @@ export default function ClientHome({ navigation }: any) {
   // What the client still owes after points; a free wash owes nothing.
   const amountDue = (w: any) => Number(w?.amount_due_ugx ?? w?.quoted_amount_ugx ?? 0);
   const owesPayment = (w: any) => !!w && !w.is_redemption && amountDue(w) > 0;
+  // Payment comes AFTER the wash: it is asked for once the worker has marked
+  // the car done (status 'ready'), never at booking or while it is washing.
+  const readyToPay = (w: any) => owesPayment(w) && w?.status === 'ready';
 
   // The car the payment popup is for: one the client tapped, else the newest
   // car that still owes money and has no payment method chosen. Never the
   // free car of a 2-for-1 pair — it has nothing to pay.
   const promptWash = forcePromptId
     ? activeList.find((w: any) => w.id === forcePromptId) || null
-    : activeList.find((w: any) => owesPayment(w) && !w.declared_payment_method && !dismissedPrompts.includes(w.id)) || null;
+    : activeList.find((w: any) => readyToPay(w) && !w.declared_payment_method && !dismissedPrompts.includes(w.id)) || null;
   const dismissPrompt = () => {
     setForcePromptId(null);
     if (promptWash) setDismissedPrompts((ids) => [...ids, promptWash.id]);
@@ -363,7 +369,7 @@ export default function ClientHome({ navigation }: any) {
                     subtitle={`${label} • ${dateLabel(w.settled_at || w.started_at || w.requested_at)}`}
                     amount={w.is_redemption ? 'Free' : `UGX ${compactUgx(amount).toLowerCase()}`}
                     tone={w.is_redemption || amount === 0 ? 'accent' : 'brand'}
-                    onPress={isPending && owesPayment(w) ? () => setForcePromptId(w.id) : undefined}
+                    onPress={isPending && readyToPay(w) ? () => setForcePromptId(w.id) : undefined}
                   />
                 );
               })

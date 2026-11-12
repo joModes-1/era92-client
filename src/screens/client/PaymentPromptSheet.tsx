@@ -11,7 +11,7 @@ import { Sheet } from '../../components/ui';
 type Method = 'mtn' | 'airtel' | 'cash';
 
 /**
- * Two-step sheet shown right after booking: "Pay UGX X" prompt, then the
+ * Two-step sheet shown once the worker has marked the wash done: "Pay UGX X" prompt, then the
  * payment-method picker.
  *
  * Cash only records the client's declared method (POST /payment-intent) — a
@@ -104,7 +104,7 @@ export default function PaymentPromptSheet({
         <View style={s.center}>
           <Image source={require('../../../assets/shield.png')} style={s.shield} resizeMode="contain" />
           <Text style={s.amountTitle}>Pay UGX {amount}</Text>
-          <Text style={s.sub}>Select payment method to proceed{'\n'}with payment of your service</Text>
+          <Text style={s.sub}>Your car is washed and ready.{'\n'}Choose how you'd like to pay.</Text>
           <GradientButton variant="sweep" size="action" full title="Make a payment" onPress={() => setStep('method')} />
         </View>
       ) : (
