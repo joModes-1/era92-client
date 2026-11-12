@@ -12,6 +12,7 @@ import { createDrawerNavigator } from '@react-navigation/drawer';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AuthProvider, useAuth } from './src/api/AuthContext';
 import { AppAlertProvider, useAppAlert } from './src/components/AppAlert';
+import BranchQrScreen from './src/screens/shared/BranchQrScreen';
 import { installPhoneFrame } from './src/web/phoneFrame';
 
 // On a wide browser window, show the app inside a phone-sized frame.
@@ -74,7 +75,7 @@ import PaymentMethodScreen from './src/screens/client/PaymentMethodScreen';
 import PaymentSuccessScreen from './src/screens/client/PaymentSuccessScreen';
 
 import { View } from 'react-native';
-import { colors } from './src/theme';
+import { colors, soft } from './src/theme';
 
 const Stack = createNativeStackNavigator();
 const Drawer = createDrawerNavigator();
@@ -106,6 +107,7 @@ function WorkerDrawer() {
       <Drawer.Screen name="My Account" component={AccountScreen} />
       <Drawer.Screen name="My Points" component={WorkerPointsScreen} />
       <Drawer.Screen name="Leaderboard" component={LeaderboardScreen} />
+      <Drawer.Screen name="Branch QR" component={BranchQrScreen} />
       <Drawer.Screen name="Report a problem" component={ReportIssueScreen} />
       <Drawer.Screen name="Profile" component={ProfileScreen} />
     </Drawer.Navigator>
@@ -126,6 +128,7 @@ function ManagerDrawer() {
       <Drawer.Screen name="Staff" component={StaffScreen} />
       <Drawer.Screen name="Catalogue" component={OrgCatalogueScreen} />
       <Drawer.Screen name="Prices" component={OrgPricesScreen} />
+      <Drawer.Screen name="Branch QR" component={BranchQrScreen} />
       <Drawer.Screen name="Report a problem" component={ReportIssueScreen} />
       <Drawer.Screen name="Profile" component={ProfileScreen} />
     </Drawer.Navigator>
@@ -152,6 +155,7 @@ function OrgadminDrawer() {
       <Drawer.Screen name="Exceptions" component={ExceptionsReportScreen} />
       {/* Reached from Home's bell and "See all alerts" — see HIDDEN_ROUTES. */}
       <Drawer.Screen name="Alerts" component={OrgAlertsScreen} />
+      <Drawer.Screen name="Branch QR" component={BranchQrScreen} />
       <Drawer.Screen name="Report a problem" component={ReportIssueScreen} />
       <Drawer.Screen name="Profile" component={ProfileScreen} />
     </Drawer.Navigator>
@@ -180,7 +184,12 @@ function ClientDrawer() {
     <Drawer.Navigator screenOptions={drawerScreenOptions} drawerContent={(p) => <AppDrawerContent {...p} />}>
       {/* Every role's first page is its Home — the page the header's back
           arrow and Android's back button return to. */}
-      <Drawer.Screen name="Home" component={ClientHome} />
+      {/* White under the phone's bottom bar too, matching the white Home. */}
+      <Drawer.Screen
+        name="Home"
+        component={ClientHome}
+        options={{ sceneStyle: { ...drawerScreenOptions.sceneStyle, backgroundColor: soft.page } }}
+      />
       <Drawer.Screen name="History" component={HistoryScreen} options={{ drawerLabel: 'My washes' }} />
       {/* Balance, redeem, and the history behind the balance on one page —
           it used to be two (Loyalty and Points History). */}

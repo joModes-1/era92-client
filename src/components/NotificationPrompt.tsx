@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
 import { colors, radii, font, spacing, weight, tracking, shadow } from '../theme';
@@ -21,8 +21,34 @@ const DISMISSED_KEY = 'notificationPromptDismissed';
 export default function NotificationPrompt({ actorId }: { actorId: string | null | undefined }) {
   const [visible, setVisible] = useState(false);
 
+  // On the web there is no card: the browser asks in its own permission
+  // prompt, which looks the way each person's browser and system draw it.
+  // Browsers only allow that prompt after the person interacts with the
+  // page, so it is raised on their first tap, once per browser.
   useEffect(() => {
-    if (!actorId) return;
+    if (Platform.OS !== 'web' || !actorId) return;
+    if (typeof window === 'undefined' || !('Notification' in window)) return;
+    if (window.Notification.permission !== 'default') return;
+    let cancelled = false;
+    const ask = async () => {
+      document.removeEventListener('pointerdown', ask);
+      if (cancelled) return;
+      const status = await window.Notification.requestPermission();
+      await AsyncStorage.setItem(DISMISSED_KEY, '1');
+      if (status === 'granted') await requestNotificationPermission(actorId).catch(() => {});
+    };
+    (async () => {
+      if (await AsyncStorage.getItem(DISMISSED_KEY)) return;
+      if (!cancelled) document.addEventListener('pointerdown', ask, { once: true });
+    })();
+    return () => {
+      cancelled = true;
+      document.removeEventListener('pointerdown', ask);
+    };
+  }, [actorId]);
+
+  useEffect(() => {
+    if (Platform.OS === 'web' || !actorId) return;
     (async () => {
       const [dismissed, existing] = await Promise.all([
         AsyncStorage.getItem(DISMISSED_KEY),
@@ -45,7 +71,7 @@ export default function NotificationPrompt({ actorId }: { actorId: string | null
     await dismiss();
   };
 
-  if (!visible) return null;
+  if (!visible || Platform.OS === 'web') return null;
 
   return (
     <View style={s.card}>

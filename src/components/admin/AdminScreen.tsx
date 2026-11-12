@@ -5,6 +5,7 @@ import { useNavigation } from '@react-navigation/native';
 import { colors, weight, soft, jk } from '../../theme';
 import { SkeletonList } from '../ui';
 import { IconBtn } from './kit';
+import MenuButton from '../MenuButton';
 
 /**
  * The admin pages' shell, after the "Lovable, top header removed" artboard:
@@ -45,7 +46,7 @@ export default function AdminScreen({
         </Text>
         <View style={styles.rt}>
           {right}
-          <IconBtn icon="bars" label="Open menu" onPress={() => navigation.openDrawer?.()} />
+          <MenuButton onPress={() => navigation.openDrawer?.()} style={{ height: 44 }} />
         </View>
       </View>
       <ScrollView
@@ -64,6 +65,6 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: soft.page },
   slim: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingTop: 22, paddingHorizontal: 18, paddingBottom: 6 },
   lbl: { flex: 1, fontSize: 14, ...jk.semibold, color: colors.textSecondary },
-  rt: { flexDirection: 'row', gap: 10 },
+  rt: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   bdy: { paddingTop: 8, paddingHorizontal: 16, paddingBottom: 28, gap: 16 },
 });

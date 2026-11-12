@@ -67,7 +67,6 @@ export default function VarianceReportScreen() {
               sub={branches.length ? `UGX · ${counted} shift${counted === 1 ? '' : 's'} counted` : 'UGX'} />
             <Tile icon="exclamation-triangle" tone={toneOf(diff).tint} label="Difference" small
               value={diff === 0 ? '0' : `${diff < 0 ? '-' : '+'}${Math.abs(diff).toLocaleString()}`}
-              valueColor={diff === 0 ? undefined : tint[toneOf(diff).tint].text}
               sub={diff < 0 ? 'UGX short' : diff > 0 ? 'UGX over' : 'All balanced'} />
           </Grid2>
 

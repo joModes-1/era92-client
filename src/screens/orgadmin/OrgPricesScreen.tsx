@@ -2,11 +2,12 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl } from 'react-native';
 import { api } from '../../api';
 import { useAuth } from '../../api/AuthContext';
-import { colors, radii, font, spacing, weight, tracking } from '../../theme';
-import Icon from '../../components/Icon';
-import ScreenHeader, { HeaderAction } from '../../components/ScreenHeader';
+import { colors, spacing, soft, tint, jk, staffType } from '../../theme';
+import Icon from '../../components/admin/LineIcon';
 import { useAppAlert } from '../../components/AppAlert';
-import { Surface, SectionHeader, EmptyState, SkeletonList, Field, FormSheet, NoticeRow, Hint } from '../../components/ui';
+import { Surface, EmptyState, Field, FormSheet, Hint } from '../../components/ui';
+import AdminScreen from '../../components/admin/AdminScreen';
+import { Card, Section, Btn, Btns, IconBtn, IconChip, Bar, kitStyles } from '../../components/admin/kit';
 
 // The grid is sized to the screen rather than to fixed columns. Five car
 // types at 96px plus a 116px label ran to ~600px on a ~360px phone, so the
@@ -246,15 +247,6 @@ export default function OrgPricesScreen() {
     setAdding(false);
   };
 
-  if (!loaded) {
-    return (
-      <View style={styles.container}>
-        <ScreenHeader title="Prices" />
-        <ScrollView contentContainerStyle={styles.body}><SkeletonList rows={5} /></ScrollView>
-      </View>
-    );
-  }
-
   // Give the label column a share that scales with how many price columns
   // have to fit beside it, then split the remainder evenly.
   const colCount = vehicleClasses.length || 1;
@@ -270,38 +262,23 @@ export default function OrgPricesScreen() {
   const empty = services.length === 0 || vehicleClasses.length === 0;
 
   return (
-    <View style={styles.container}>
-      <ScreenHeader
-        title="Prices"
-        subtitle={
-          isManager
-            ? `${branchName || 'Your branch'} · ${services.length} wash types × ${vehicleClasses.length} car types`
-            : `${services.length} wash types × ${vehicleClasses.length} car types`
-        }
-        action={<HeaderAction icon="plus" onPress={() => openAdd(vehicleClasses.length === 0 ? 'vehicle' : 'service')} />}
-      />
-
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={styles.body}
-        showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} />}
-      >
-        {/* Add buttons come first and are always present — adding a car type
-            or a wash type IS how you add a price, so it must not be hidden
-            behind an empty state or a trip to another screen. Org admin only:
-            a manager overriding one branch's prices has no reason to invent
-            a car/wash type that every other branch would also see. */}
-        <View style={styles.addRow}>
-          <TouchableOpacity style={styles.addBtn} onPress={() => openAdd('vehicle')} activeOpacity={0.8}>
-            <Icon name="car" size={12} color={colors.primary} />
-            <Text style={styles.addBtnText}>Add car type</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.addBtn} onPress={() => openAdd('service')} activeOpacity={0.8}>
-            <Icon name="th-large" size={12} color={colors.primary} />
-            <Text style={styles.addBtnText}>Add wash type</Text>
-          </TouchableOpacity>
-        </View>
+    <AdminScreen
+      title="Prices"
+      subtitle={
+        isManager
+          ? `${branchName || 'Your branch'} · ${services.length} wash types × ${vehicleClasses.length} car types`
+          : `${services.length} wash types × ${vehicleClasses.length} car types`
+      }
+      loading={!loaded}
+      onRefresh={load}
+      right={<IconBtn icon="plus" label="Add" onPress={() => openAdd(vehicleClasses.length === 0 ? 'vehicle' : 'service')} />}
+    >
+        {/* Adding a car type or a wash type IS how you add a price, so both
+            stay in view rather than behind an empty state or another screen. */}
+        <Btns>
+          <Btn small icon="car" title="Add car type" onPress={() => openAdd('vehicle')} />
+          <Btn small icon="plus" title="Add wash type" onPress={() => openAdd('service')} />
+        </Btns>
 
         {isManager && (
           <Hint>
@@ -334,31 +311,37 @@ export default function OrgPricesScreen() {
         ) : (
           <>
             {/* Coverage — how much of the grid is priced */}
-            <NoticeRow
-              tone={missing.length > 0 ? 'warning' : 'success'}
-              icon={missing.length > 0 ? 'exclamation-triangle' : 'check'}
-              title={missing.length > 0
-                ? isManager
-                  ? `${missing.length} of ${totalCells} combinations have no org price yet`
-                  : `${missing.length} of ${totalCells} combinations still need a price`
-                : `All ${totalCells} combinations priced`}
-              subtitle={missing.length > 0 ? 'Empty cells are marked with + in the grid below.' : undefined}
-              trailing={<Text style={styles.bannerCount}>{filled}/{totalCells}</Text>}
-            />
+            <Card>
+              <View style={styles.coverHead}>
+                <IconChip icon={missing.length > 0 ? 'tags' : 'check'} tone={missing.length > 0 ? 'warning' : 'success'} square />
+                <View style={{ flex: 1 }}>
+                  <Text style={kitStyles.name}>
+                    {missing.length > 0 ? `${missing.length} still to price` : 'Every combination priced'}
+                  </Text>
+                  <Text style={kitStyles.k}>
+                    {missing.length > 0
+                      ? isManager ? 'No org price yet — tap + Set in the grid' : 'Tap + Set in the grid to add them'
+                      : `${totalCells} wash and car type pairs`}
+                  </Text>
+                </View>
+                <Text style={styles.coverCount}>{filled}/{totalCells}</Text>
+              </View>
+              <Bar fraction={totalCells ? filled / totalCells : 0} style={{ marginTop: 12 }} />
+            </Card>
 
-            <SectionHeader title="Price matrix" />
+            <Section title="Price matrix" right={<Text style={kitStyles.k}>UGX</Text>} />
 
             {/* Matrix — horizontal scroll with a pinned service column */}
             {/* The measuring View sits inside the card so the width it
                 reports is the space the grid actually gets. */}
-            <Surface elevation="sm" padded={false} style={styles.matrixCard}>
+            <Card style={styles.matrixCard}>
               <View onLayout={(e) => setGridWidth(e.nativeEvent.layout.width)}>
               <MaybeScroll scroll={!fits}>
                 <View style={fits ? styles.gridFit : undefined}>
                   {/* Header */}
                   <View style={styles.row}>
                     <View style={[styles.corner, { width: labelW }]}>
-                      <Text style={styles.cornerText}>UGX</Text>
+                      <Text style={styles.cornerText}>Wash</Text>
                     </View>
                     {vehicleClasses.map((vc: any) => (
                       <View key={vc.id} style={[styles.headCell, { width: colW }]}>
@@ -407,7 +390,10 @@ export default function OrgPricesScreen() {
                                 {isOverride && <View style={styles.overrideDot} />}
                               </View>
                             ) : (
-                              <Icon name="plus" size={11} color={colors.warning} />
+                              <View style={styles.setChip}>
+                                <Icon name="plus" size={8} color={tint.warning.text} />
+                                <Text style={styles.setText}>Set</Text>
+                              </View>
                             )}
                           </TouchableOpacity>
                         );
@@ -423,23 +409,16 @@ export default function OrgPricesScreen() {
                     activeOpacity={0.6}
                   >
                     <View style={styles.addRowInner}>
-                      <Icon name="plus" size={10} color={colors.primary} />
-                      <Text style={styles.addRowText}>Wash type</Text>
+                      <Icon name="plus" size={10} color={soft.text} />
+                      <Text style={styles.addRowText}>Add wash type</Text>
                     </View>
                   </TouchableOpacity>
                 </View>
               </MaybeScroll>
               </View>
-            </Surface>
-
-            <Hint>
-              {isManager
-                ? 'A dot marks a price set for your branch. Cells without one use the org default. Types you add are private to your branch.'
-                : 'Prices in thousands — tap any cell for the exact figure. Branch managers can override the org price for their own branch.'}
-            </Hint>
+            </Card>
           </>
         )}
-      </ScrollView>
 
       {/* ── Set one price ── */}
       <FormSheet
@@ -515,7 +494,7 @@ export default function OrgPricesScreen() {
           style={{ marginBottom: 0 }}
         />
       </FormSheet>
-    </View>
+    </AdminScreen>
   );
 }
 
@@ -534,58 +513,41 @@ function MaybeScroll({ scroll, children }: { scroll: boolean; children: React.Re
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.bg },
-  scroll: { flex: 1 },
-  body: { padding: spacing.lg, paddingBottom: spacing.xxxl, gap: spacing.md },
+  coverHead: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  coverCount: { fontSize: 15, ...jk.heavy, color: colors.text, ...staffType.tabular },
 
-  addRow: { flexDirection: 'row', gap: spacing.sm },
-  addBtn: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7,
-    minHeight: 44, borderRadius: radii.md, backgroundColor: colors.primarySoft,
-  },
-  addBtnText: { fontSize: font.sm, fontWeight: weight.heavy, color: colors.primaryText },
-
-  bannerCount: { fontSize: font.regular, fontWeight: weight.black, color: colors.textSecondary },
-
-  matrixCard: { overflow: 'hidden' },
+  // The grid sits flush in its card; the card's own rounding clips it.
+  matrixCard: { padding: 0, overflow: 'hidden' },
   row: { flexDirection: 'row' },
-  rowBorder: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.borderLight },
+  rowBorder: { borderTopWidth: 1, borderTopColor: soft.line },
 
-  corner: {
-    height: 40, justifyContent: 'center', paddingHorizontal: spacing.sm,
-    backgroundColor: colors.bgSunken,
-  },
-  cornerText: { fontSize: font.xs, fontWeight: weight.heavy, color: colors.textMuted },
+  corner: { height: 44, justifyContent: 'center', paddingHorizontal: 14, backgroundColor: soft.barTrack },
+  cornerText: { fontSize: 12, ...jk.semibold, color: colors.textSecondary },
   headCell: {
-    height: 40, alignItems: 'center', justifyContent: 'center',
-    paddingHorizontal: 3, backgroundColor: colors.bgSunken,
-    borderLeftWidth: StyleSheet.hairlineWidth, borderLeftColor: colors.border,
+    height: 44, alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: 3, backgroundColor: soft.barTrack,
   },
-  headText: { fontSize: font.xs, fontWeight: weight.heavy, color: colors.text, textAlign: 'center' },
-  addCell: {
-    height: 42, alignItems: 'center', justifyContent: 'center',
-    backgroundColor: colors.primarySoft,
-    borderLeftWidth: StyleSheet.hairlineWidth, borderLeftColor: colors.border,
-  },
+  headText: { fontSize: 12, ...jk.bold, color: soft.text, textAlign: 'center' },
+  addCell: { height: 44, alignItems: 'center', justifyContent: 'center', backgroundColor: soft.bg },
 
-  labelCell: { minHeight: 48, justifyContent: 'center', paddingHorizontal: spacing.sm, backgroundColor: colors.bgCard },
-  labelText: { fontSize: font.sm, fontWeight: weight.bold, color: colors.text },
+  labelCell: { minHeight: 54, justifyContent: 'center', paddingHorizontal: 14, backgroundColor: colors.bgCard },
+  labelText: { fontSize: 13, lineHeight: 17, ...jk.semibold, color: colors.text },
 
   gridFit: { width: '100%' },
-  cell: {
-    minHeight: 48, alignItems: 'center', justifyContent: 'center',
-    borderLeftWidth: StyleSheet.hairlineWidth, borderLeftColor: colors.borderLight,
-    paddingHorizontal: 4,
-  },
-  cellEmpty: { backgroundColor: colors.warningSoft },
-  cellValueWrap: { alignItems: 'center', gap: 2 },
-  cellText: { fontSize: font.sm, fontWeight: weight.heavy, color: colors.text, letterSpacing: tracking.tight },
-  overrideDot: { width: 4, height: 4, borderRadius: 2, backgroundColor: colors.primary },
+  cell: { minHeight: 54, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
+  cellEmpty: {},
+  cellValueWrap: { alignItems: 'center', gap: 3 },
+  cellText: { fontSize: 14, ...jk.bold, color: colors.text, ...staffType.tabular },
+  overrideDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: tint.primary.fg },
 
-  addRowStrip: { backgroundColor: colors.primarySoft },
-  addRowInner: {
-    minHeight: 40, flexDirection: 'row', alignItems: 'center', gap: 6,
-    paddingHorizontal: spacing.md,
+  // An unpriced cell: a small peach "+ Set" chip rather than a coloured block.
+  setChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 3,
+    backgroundColor: tint.warning.bg, borderRadius: 10, paddingHorizontal: 7, paddingVertical: 4,
   },
-  addRowText: { fontSize: font.sm, fontWeight: weight.heavy, color: colors.primaryText },
+  setText: { fontSize: 11, ...jk.bold, color: tint.warning.text },
+
+  addRowStrip: { borderTopWidth: 1, borderTopColor: soft.line },
+  addRowInner: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14 },
+  addRowText: { fontSize: 13, ...jk.bold, color: soft.text },
 });

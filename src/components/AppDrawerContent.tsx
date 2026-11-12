@@ -39,6 +39,7 @@ const ROUTE_ICON: Record<string, string> = {
   'Points Settings': 'star-half-alt',
   'Customers': 'address-book',
   'Billing': 'file-invoice-dollar',
+  'Branch QR': 'qrcode',
 };
 
 // Routes registered so they can be navigated to, but which are reached from
@@ -50,7 +51,7 @@ const HIDDEN_ROUTES = new Set(['Org Detail', 'Alerts']);
 const GROUPS: { title: string; routes: string[] }[] = [
   { title: 'Today', routes: ['Current Car', 'Shift & Queue', 'Home', 'Live Jobs', 'Cash', 'Reports', 'Overview', 'Cash Handover', 'Daily Report'] },
   { title: 'Reports', routes: ['Performance', 'Cash Variance', 'Stale Alerts', 'Exceptions', 'History'] },
-  { title: 'Manage', routes: ['Staff', 'Branches', 'Catalogue', 'Prices', 'Points Settings', 'Customers', 'Organizations', 'Billing', 'Platform Admins'] },
+  { title: 'Manage', routes: ['Staff', 'Branches', 'Branch QR', 'Catalogue', 'Prices', 'Points Settings', 'Customers', 'Organizations', 'Billing', 'Platform Admins'] },
   { title: 'You', routes: ['My Account', 'My Points', 'Leaderboard', 'Points', 'Report a problem', 'Profile'] },
 ];
 

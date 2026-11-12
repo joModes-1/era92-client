@@ -15,6 +15,8 @@ import { buildAlerts, topOfEachKind } from './alerts';
 /** The opening hours the by-hour chart spans; a wash outside them widens it. */
 const OPEN_FROM = 7;
 const OPEN_TO = 18;
+/** How many alerts Home's "Needs attention" shows before "See all". */
+const HOME_ALERTS = 3;
 
 /**
  * The org admin's Home, after the "Era92 admin mobile app" design: today's
@@ -70,7 +72,8 @@ export default function DashboardScreen() {
 
   // ── What needs a decision: the top alert of each kind; the rest live on Alerts ──
   const alerts = buildAlerts(d || {}, inBranch);
-  const attention = topOfEachKind(alerts);
+  // At most three on Home, the most urgent kinds first; the rest are on Alerts.
+  const attention = topOfEachKind(alerts).slice(0, HOME_ALERTS);
   const hiddenCount = alerts.length - attention.length;
   const stuck = alerts.filter((a) => a.kind === 'stuck');
 

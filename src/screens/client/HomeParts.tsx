@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { colors, radii, font, spacing, weight, tracking, shadow } from '../../theme';
 import Icon from '../../components/Icon';
+import MenuButton from '../../components/MenuButton';
 import CarWashLogo from '../../components/CarWashLogo';
 import GradientText from '../../components/GradientText';
 import GradientIcon from '../../components/GradientIcon';
@@ -76,11 +77,7 @@ export function HomeTopBar({
         </TouchableOpacity>
       ) : null}
 
-      <TouchableOpacity onPress={onMenu} hitSlop={10} style={s.menuBtn} activeOpacity={0.6}>
-        <View style={s.menuLine} />
-        <View style={s.menuLine} />
-        <View style={s.menuLine} />
-      </TouchableOpacity>
+      <MenuButton onPress={onMenu} />
     </View>
   );
 }
@@ -581,8 +578,6 @@ const s = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
 
-  menuBtn: { width: 28, height: 28, justifyContent: 'center', gap: 4, alignItems: 'flex-end' },
-  menuLine: { width: 17, height: 2, borderRadius: 1, backgroundColor: colors.text },
 
   // ── Rewards banner ──
   // A tint alone was too faint to read as its own section — it needs a

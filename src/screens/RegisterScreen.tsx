@@ -11,6 +11,7 @@ import { colors, radii, font, spacing, weight, tracking, noFocusRing } from '../
 import GradientButton from '../components/GradientButton';
 import Icon from '../components/Icon';
 import UgandaFlag from '../components/UgandaFlag';
+import { ugLocalDigits } from '../utils/phone';
 import { Sheet } from '../components/ui';
 
 /**
@@ -63,7 +64,8 @@ export default function RegisterScreen() {
   }, [resendIn]);
 
   const onPhoneChange = (t: string) => {
-    setPhone(t.replace(/[^\d]/g, '').slice(0, 12));
+    // After the fixed 256: the 9-digit number only (a typed 0 or pasted 256 is dropped).
+    setPhone(ugLocalDigits(t));
     if (error) setError('');
   };
 

@@ -54,13 +54,13 @@ export default function StaleReportScreen() {
           ]} />
         </View>
         {w.worker_phone || hasLiveJobs ? (
-          <View style={{ marginTop: 14 }}>
+          <View style={{ marginTop: 12 }}>
             <Btns>
               {w.worker_phone ? (
-                <Btn icon="phone" title="Call worker" onPress={() => Linking.openURL(`tel:${w.worker_phone}`).catch(() => {})} />
+                <Btn small icon="phone" title="Call worker" onPress={() => Linking.openURL(`tel:${w.worker_phone}`).catch(() => {})} />
               ) : null}
               {hasLiveJobs ? (
-                <Btn primary title="Open in Live jobs" onPress={() => navigation.navigate('Live Jobs', { view: 'stuck' })} />
+                <Btn small primary title="Open in Live jobs" onPress={() => navigation.navigate('Live Jobs', { view: 'stuck' })} />
               ) : null}
             </Btns>
           </View>

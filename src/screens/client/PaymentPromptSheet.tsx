@@ -5,6 +5,7 @@ import { colors, radii, font, spacing, weight, noFocusRing } from '../../theme';
 import GradientButton from '../../components/GradientButton';
 import Icon from '../../components/Icon';
 import UgandaFlag from '../../components/UgandaFlag';
+import { ugLocalDigits } from '../../utils/phone';
 import { Sheet } from '../../components/ui';
 
 type Method = 'mtn' | 'airtel' | 'cash';
@@ -78,7 +79,7 @@ export default function PaymentPromptSheet({
         phone: needsPhone ? `+256${phone.replace(/\D/g, '').replace(/^0/, '')}` : undefined,
       });
       if (needsPhone) {
-        const local = phone.replace(/D/g, '').replace(/^0/, '');
+        const local = phone.replace(/\D/g, '').replace(/^0/, '');
         const p: any = await api.startPayment(wash.id, `0${local}`);
         setAwaiting({ id: p.payment_id, url: p.redirect_url, receipt: res?.receipt_no });
         onWaiting?.();
@@ -128,7 +129,7 @@ export default function PaymentPromptSheet({
               <Text style={s.dial}>+256</Text>
               <TextInput
                 value={phone}
-                onChangeText={(t) => setPhone(t.replace(/[^\d]/g, '').slice(0, 10))}
+                onChangeText={(t) => setPhone(ugLocalDigits(t))}
                 placeholder="782235801"
                 placeholderTextColor={colors.textMuted}
                 keyboardType="phone-pad"

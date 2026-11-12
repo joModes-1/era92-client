@@ -170,10 +170,10 @@ export default function LiveJobsScreen() {
           ]} />
         </View>
         {workerPhone || mgrPhone ? (
-          <View style={{ marginTop: 14 }}>
+          <View style={{ marginTop: 12 }}>
             <Btns>
-              {workerPhone ? <Btn icon="phone" title="Call worker" onPress={() => call(workerPhone)} /> : null}
-              {mgrPhone ? <Btn primary icon="phone" title="Call manager" onPress={() => call(mgrPhone)} /> : null}
+              {workerPhone ? <Btn small icon="phone" title="Call worker" onPress={() => call(workerPhone)} /> : null}
+              {mgrPhone ? <Btn small primary icon="phone" title="Call manager" onPress={() => call(mgrPhone)} /> : null}
             </Btns>
           </View>
         ) : null}

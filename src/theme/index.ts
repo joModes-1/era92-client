@@ -336,11 +336,11 @@ export const tone: Record<Tone, { fg: string; text: string; bg: string; border: 
  * `text` is type on `bg` (all pass 4.5:1).
  */
 export const tint: Record<'primary' | 'info' | 'warning' | 'success' | 'error' | 'neutral', { bg: string; fg: string; text: string }> = {
-  primary: { bg: '#F6E9FF', fg: core.violet, text: '#8A12C9' },
-  info:    { bg: '#E8EFFF', fg: '#3B5BDB',   text: '#2447C9' },
-  warning: { bg: '#FFEEDF', fg: '#E8590C',   text: '#A14A06' },
-  success: { bg: '#DDF8EC', fg: '#0B9E62',   text: '#0B7A4B' },
-  error:   { bg: '#FFE6EA', fg: '#E03150',   text: '#C0192B' },
+  primary: { bg: '#EFDAFF', fg: core.violet, text: '#8A12C9' },
+  info:    { bg: '#DCE6FF', fg: '#3B5BDB',   text: '#2447C9' },
+  warning: { bg: '#FFE2C7', fg: '#E8590C',   text: '#A14A06' },
+  success: { bg: '#CDF4E1', fg: '#0B9E62',   text: '#0B7A4B' },
+  error:   { bg: '#FFD9DF', fg: '#E03150',   text: '#C0192B' },
   neutral: { bg: ink[50],   fg: ink[500],    text: ink[600] },
 };
 

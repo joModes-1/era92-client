@@ -183,22 +183,24 @@ export function Seg<T extends string>({ options, value, onChange }: {
 }
 
 /** The gradient button, and its quiet soft-violet partner. */
-export function Btn({ title, onPress, primary, icon, danger, style, disabled }: {
+export function Btn({ title, onPress, primary, icon, danger, style, disabled, small }: {
   title: string; onPress: () => void; primary?: boolean; icon?: string; danger?: boolean; style?: ViewStyle; disabled?: boolean;
+  /** The compact size for buttons inside a card (Call worker, Open in Live jobs). */
+  small?: boolean;
 }) {
   const fg = primary ? '#fff' : danger ? tint.error.text : soft.text;
   const content = (
     <View style={s.btnInner}>
-      {icon ? <Icon name={icon} size={15} color={fg} /> : null}
-      <Text style={[s.btnText, { color: fg }]} numberOfLines={1}>{title}</Text>
+      {icon ? <Icon name={icon} size={small ? 13 : 15} color={fg} /> : null}
+      <Text style={[s.btnText, small && s.btnTextSmall, { color: fg }]} numberOfLines={1}>{title}</Text>
     </View>
   );
   return (
     <TouchableOpacity onPress={onPress} disabled={disabled} activeOpacity={0.85} style={[disabled && { opacity: 0.45 }, style]} accessibilityRole="button">
       {primary ? (
-        <View style={[s.btnShadow]}><Brand style={s.btn}>{content}</Brand></View>
+        <View style={[s.btnShadow, small && s.btnShadowSmall]}><Brand style={[s.btn, small && s.btnSmall] as any}>{content}</Brand></View>
       ) : (
-        <View style={[s.btn, { backgroundColor: danger ? tint.error.bg : soft.bg }]}>{content}</View>
+        <View style={[s.btn, small && s.btnSmall, { backgroundColor: danger ? tint.error.bg : soft.bg }]}>{content}</View>
       )}
     </TouchableOpacity>
   );
@@ -212,11 +214,11 @@ export function Btns({ children }: { children: ReactNode }) {
   );
 }
 
-/** A round soft-violet icon button, with an orange count when there is one. */
+/** A plain header icon button (dark icon, no background), with an orange count when there is one. */
 export function IconBtn({ icon, onPress, label, badge }: { icon: string; onPress: () => void; label: string; badge?: number }) {
   return (
     <TouchableOpacity onPress={onPress} activeOpacity={0.7} style={s.ib} accessibilityRole="button" accessibilityLabel={label}>
-      <Icon name={icon} size={17} color={soft.text} />
+      <Icon name={icon} size={19} color={colors.text} />
       {badge ? <Text style={s.badge}>{badge > 99 ? '99+' : badge}</Text> : null}
     </TouchableOpacity>
   );
@@ -396,12 +398,16 @@ const s = StyleSheet.create({
   btns: { flexDirection: 'row', gap: 10 },
   btn: { height: 50, borderRadius: 25, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 18 },
   btnShadow: { borderRadius: 25, ...soft.btnShadow },
+  btnSmall: { height: 40, borderRadius: 20, paddingHorizontal: 14 },
+  btnShadowSmall: { borderRadius: 20, shadowOpacity: 0.16, shadowRadius: 10, shadowOffset: { width: 0, height: 4 } },
   btnInner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
   btnText: { fontSize: 15, ...jk.bold },
+  btnTextSmall: { fontSize: 13 },
 
-  ib: { width: 44, height: 44, borderRadius: 22, backgroundColor: soft.bg, alignItems: 'center', justifyContent: 'center' },
+  // Plain like the client header: a dark icon, no circle, the full 44px tap area.
+  ib: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   badge: {
-    position: 'absolute', top: -3, right: -3, minWidth: 18, height: 18, lineHeight: 18, borderRadius: 9, paddingHorizontal: 5,
+    position: 'absolute', top: 4, right: 3, minWidth: 18, height: 18, lineHeight: 18, borderRadius: 9, paddingHorizontal: 5,
     backgroundColor: soft.badge, color: '#fff', fontSize: 11, ...jk.bold, textAlign: 'center', overflow: 'hidden',
   },
 

@@ -4,6 +4,7 @@ import { api } from '../../api';
 import { useAuth } from '../../api/AuthContext';
 import { useAppAlert } from '../../components/AppAlert';
 import ScannerSheet from '../../components/ScannerSheet';
+import { parseBranchQr } from '../../utils/branchQr';
 
 /**
  * The client's only scan in the whole self-service flow: the static QR
@@ -34,14 +35,17 @@ export default function BranchScanScreen() {
   // bar.
   const { useFreeWash, usePromo, preselectServiceName, payWithPoints } = route.params || {};
 
-  const resolveBranch = async (code: string) => {
+  const resolveBranch = async (scanned: string) => {
     if (!actor?.org_id) {
       alert('Could not verify your account', 'Please sign out and back in, then try again.');
       return;
     }
     setBusy(true);
     try {
-      const branch = await api.resolveBranchCode(code, actor.org_id);
+      // A wall QR names its organisation as well as the branch; a typed or
+      // older code is just the branch, within the client's own organisation.
+      const { code, orgId } = parseBranchQr(scanned);
+      const branch = await api.resolveBranchCode(code, orgId || actor.org_id);
       navigation.replace('BookWash', {
         branchId: branch.id,
         branchName: branch.name,

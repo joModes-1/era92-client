@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, ScrollView, RefreshControl } from 'react-native
 import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../../api/AuthContext';
 import { api } from '../../api';
-import { colors, radii, font, spacing, weight, tracking } from '../../theme';
+import { colors, radii, font, spacing, weight, tracking, soft } from '../../theme';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   HomeTopBar, RewardsBanner, ServiceTile, ScanBar, RecentRow, PromptRow, PromoCard, WashTracker, SuccessToast,
@@ -442,7 +442,9 @@ export default function ClientHome({ navigation }: any) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.bg },
+  // White top to bottom, as in the design: the status bar, the header and
+  // the page read as one surface (the tiles keep their own grey cards).
+  container: { flex: 1, backgroundColor: soft.page },
   // Inset from the page edge, with the wide gutter the mockup leaves between
   // the two columns (each tile is 43% — see HomeParts' tile).
   tileGrid: {

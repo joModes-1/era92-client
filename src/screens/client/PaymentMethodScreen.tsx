@@ -10,6 +10,7 @@ import { useAppAlert } from '../../components/AppAlert';
 import { colors, radii, font, spacing, weight, tracking, noFocusRing } from '../../theme';
 import Icon from '../../components/Icon';
 import GradientButton from '../../components/GradientButton';
+import { ugLocalDigits } from '../../utils/phone';
 
 /**
  * "Tell us how you're paying" — the client's declared payment intent.
@@ -72,8 +73,8 @@ export default function PaymentMethodScreen() {
     setSubmitting(true);
     try {
       if (needsPhone) {
-        await api.declarePaymentIntent(wash.id, { method, phone: `+256${phone.replace(/D/g, '')}` });
-        const p: any = await api.startPayment(wash.id, `0${phone.replace(/D/g, '').slice(-9)}`);
+        await api.declarePaymentIntent(wash.id, { method, phone: `+256${phone.replace(/\D/g, '')}` });
+        const p: any = await api.startPayment(wash.id, `0${phone.replace(/\D/g, '').slice(-9)}`);
         setAwaiting({ id: p.payment_id, url: p.redirect_url });
         Linking.openURL(p.redirect_url).catch(() => alert('Could not open the payment page', 'Tap "Open payment page" to try again.'));
         setSubmitting(false);
@@ -156,7 +157,7 @@ export default function PaymentMethodScreen() {
               <Text style={styles.dial}>+256</Text>
               <TextInput
                 value={phone}
-                onChangeText={(t) => setPhone(t.replace(/[^\d]/g, '').slice(0, 12))}
+                onChangeText={(t) => setPhone(ugLocalDigits(t))}
                 placeholder="782235801"
                 placeholderTextColor={colors.textMuted}
                 keyboardType="phone-pad"

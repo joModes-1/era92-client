@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 import { api } from '../../api';
 import { colors, spacing, weight, jk } from '../../theme';
 import { useAppAlert } from '../../components/AppAlert';
@@ -17,6 +18,7 @@ import { isoLocal, compact } from './adminData';
  */
 export default function BranchesScreen() {
   const alert = useAppAlert();
+  const navigation = useNavigation<any>();
   const [data, setData] = useState<any>(null);
   const [query, setQuery] = useState('');
   const [createVisible, setCreateVisible] = useState(false);
@@ -103,6 +105,9 @@ export default function BranchesScreen() {
           <Text style={kitStyles.k}>Today</Text>
           <Text style={styles.amt}>{washes} wash{washes === 1 ? '' : 'es'} · {compact(Number(t?.gross_ugx || 0))}</Text>
         </View>
+        {isActive ? (
+          <Btn small icon="qrcode" title="Wall QR code" style={{ marginTop: 12 }} onPress={() => navigation.navigate('Branch QR', { branchId: b.id })} />
+        ) : null}
       </Card>
     );
   };

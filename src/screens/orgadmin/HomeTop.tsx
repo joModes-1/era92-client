@@ -46,7 +46,6 @@ export default function HomeTop({ d }: { d: TopData }) {
         <View style={s.row}>
           <View style={s.cell}>
             <Tile icon="money-bill-wave" tone="warning" label="Cash out" value={compact(d.held)}
-              valueColor={d.held > 0 ? tint.warning.text : undefined}
               sub={d.holders ? `${d.holders} staff holding` : 'All handed in'} />
           </View>
           <View style={s.cell}>

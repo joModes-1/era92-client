@@ -8,9 +8,9 @@ import { Avatar, Field, FormSheet } from '../../components/ui';
 import AdminScreen from '../../components/admin/AdminScreen';
 import BranchSheet, { BranchOption } from '../../components/admin/BranchSheet';
 import {
-  Card, Section, Row, Pill, Amount, Seg, Chip, Chips, Btn, Btns, IconBtn, Hr, kitStyles,
+  Card, Section, Row, Pill, Amount, Seg, Chip, Chips, Btn, Btns, IconBtn, IconChip, Bar, Met, Hr, kitStyles,
 } from '../../components/admin/kit';
-import { daysAgo, isoLocal, ugx, sinceText, clock, weekday, minutesSince } from './adminData';
+import { daysAgo, isoLocal, ugx, compact, sinceText, clock, weekday, minutesSince } from './adminData';
 
 type Tab = 'unhanded' | 'handed' | 'variances';
 
@@ -57,6 +57,7 @@ export default function CashScreen() {
   const owing = people.filter((w) => Number(w.owes_ugx || 0) > 0).sort((a, b) => Number(b.owes_ugx) - Number(a.owes_ugx));
   const held = owing.reduce((t, w) => t + Number(w.owes_ugx || 0), 0);
   const heldBranches = new Set(owing.map((w) => w.branch_id)).size;
+  const handedToday = people.reduce((t, w) => t + Number(w.handed_in_today_ugx || 0), 0);
   const handed = people
     .filter((w) => Number(w.handed_in_today_ugx || 0) > 0)
     .sort((a, b) => String(b.last_handover_at).localeCompare(String(a.last_handover_at)));
@@ -116,8 +117,8 @@ export default function CashScreen() {
             : `${days} day${days === 1 ? '' : 's'} since last handover`}
         </Text>
         <Btns>
-          {phone ? <Btn icon="phone" title="Call" onPress={() => Linking.openURL(`tel:${phone}`).catch(() => {})} /> : null}
-          <Btn primary title="Confirm received" onPress={() => open(w)} />
+          {phone ? <Btn small icon="phone" title="Call" onPress={() => Linking.openURL(`tel:${phone}`).catch(() => {})} /> : null}
+          <Btn small primary title="Confirm received" onPress={() => open(w)} />
         </Btns>
       </Card>
     );
@@ -133,13 +134,33 @@ export default function CashScreen() {
       <Chips>
         <Chip label={branchName || 'All branches'} caret onPress={() => setPicking(true)} />
       </Chips>
-      <View style={styles.heldCard}>
-        <Text style={[kitStyles.k, styles.heldInk]}>Held by staff, not handed in</Text>
-        <Text style={[styles.heldValue, styles.heldInk]} numberOfLines={1} adjustsFontSizeToFit>UGX {ugx(held)}</Text>
-        <Text style={[kitStyles.k, styles.heldInk]}>
-          {owing.length ? `${owing.length} ${owing.length === 1 ? 'person' : 'people'} across ${heldBranches} branch${heldBranches === 1 ? '' : 'es'}` : 'Everyone has handed in'}
+      {/* Today's cash at a glance: what staff still hold, and how much has
+          come in — the bar fills as handovers are confirmed. */}
+      <Card>
+        <View style={styles.who}>
+          <IconChip icon="money-bill-wave" tone="warning" square />
+          <View style={{ flex: 1 }}>
+            <Text style={kitStyles.name}>Cash held by staff</Text>
+            <Text style={kitStyles.k} numberOfLines={1}>
+              {owing.length
+                ? `${owing.length} ${owing.length === 1 ? 'person' : 'people'} across ${heldBranches} branch${heldBranches === 1 ? '' : 'es'}`
+                : 'Everyone has handed in'}
+            </Text>
+          </View>
+          <Pill tone={held > 0 ? 'warn' : 'ok'} label={held > 0 ? 'To collect' : 'All in'} />
+        </View>
+        <Text style={[kitStyles.n, { marginTop: 14 }]} numberOfLines={1} adjustsFontSizeToFit>UGX {ugx(held)}</Text>
+        <Bar fraction={handedToday + held > 0 ? handedToday / (handedToday + held) : 1} style={{ marginTop: 12 }} />
+        <Text style={[kitStyles.k, { marginTop: 6 }]}>
+          {handedToday + held > 0
+            ? `${Math.round((handedToday / (handedToday + held)) * 100)}% of today's cash handed in`
+            : 'No cash taken yet today'}
         </Text>
-      </View>
+        <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
+          <Met tone="warning" label="Still held" value={compact(held)} />
+          <Met tone="success" label="Handed in today" value={compact(handedToday)} />
+        </View>
+      </Card>
 
       <Seg
         value={tab}
@@ -217,11 +238,5 @@ export default function CashScreen() {
 
 const styles = StyleSheet.create({
   who: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  heldCard: {
-    backgroundColor: toneMap.warning.bg, borderWidth: 1, borderColor: toneMap.warning.border,
-    borderRadius: 16, paddingVertical: 14, paddingHorizontal: spacing.lg,
-  },
-  heldInk: { color: colors.warningText },
-  heldValue: { fontSize: 26, lineHeight: 32, ...jk.semibold, marginTop: 2, ...staffType.tabular },
   owes: { ...staffType.label, marginBottom: spacing.md },
 });
