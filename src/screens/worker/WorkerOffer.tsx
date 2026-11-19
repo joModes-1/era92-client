@@ -5,6 +5,7 @@ import { colors, soft, tint, jk, offer as O, staffType } from '../../theme';
 import CarWashLogo from '../../components/CarWashLogo';
 import Icon from '../../components/admin/LineIcon';
 import { SlideToConfirm } from '../../components/ui';
+import { Btn } from '../../components/admin/kit';
 import CountdownRing from './CountdownRing';
 
 /**
@@ -21,7 +22,7 @@ const carLine = (w: any) => [w.vehicle_class_name, w.service_name].filter(Boolea
 const price = (w: any) => (w.is_redemption ? (w.promo_key ? 'Free · 2-for-1' : 'Free') : `UGX ${ugx(w.quoted_amount_ugx)}`);
 
 /** The number plate, drawn like one: boxed, bold, tracked. */
-function PlateBox({ text, muted, big }: { text: string; muted?: boolean; big?: boolean }) {
+export function PlateBox({ text, muted, big }: { text: string; muted?: boolean; big?: boolean }) {
   return (
     <View style={[s.plate, muted && s.plateMuted, big && s.plateBig]}>
       <Text style={[s.plateText, muted && { color: O.closedRing }, big && { fontSize: 34, lineHeight: 40 }]}>{text}</Text>
@@ -41,7 +42,7 @@ function Chip({ text, tone }: { text: string; tone: 'info' | 'primary' }) {
 // ───────────────────────── Inline on Home ─────────────────────────
 
 export function OfferCard({
-  wash, left, total, canTake, why, taking, onTake, onOpen,
+  wash, left, total, canTake, why, taking, onTake, onOpen, busyWithCar,
 }: {
   wash: any;
   left: number;
@@ -52,6 +53,12 @@ export function OfferCard({
   taking: boolean;
   onTake: () => void;
   onOpen: () => void;
+  /**
+   * The worker is already washing a car, so the page already carries its
+   * slide (finish washing). Taking another is a plain button — never a
+   * second slide competing with that one.
+   */
+  busyWithCar?: boolean;
 }) {
   const pts = Number(wash.worker_points_to_award || 0);
   const secs = Math.max(0, left);
@@ -71,7 +78,11 @@ export function OfferCard({
         </View>
       </TouchableOpacity>
 
-      {canTake ? (
+      {canTake && busyWithCar ? (
+        <View style={{ marginTop: 14 }}>
+          <Btn small primary title={taking ? 'Taking…' : 'Take this car too'} disabled={taking} onPress={onTake} />
+        </View>
+      ) : canTake ? (
         <View style={{ marginTop: 14 }}>
           <SlideToConfirm label="Swipe to take" onConfirm={onTake} loading={taking} showHint={false} outlined />
         </View>
@@ -101,7 +112,7 @@ function Header({ branch, pill, closed }: { branch?: string; pill: string; close
   );
 }
 
-function Row({ label, value, pill, last }: { label: string; value: string; pill?: boolean; last?: boolean }) {
+export function Row({ label, value, pill, last }: { label: string; value: string; pill?: boolean; last?: boolean }) {
   return (
     <View style={[s.row, last && { borderBottomWidth: 0 }]}>
       <Text style={s.rowLabel}>{label}</Text>

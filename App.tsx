@@ -97,7 +97,9 @@ function useDrawerScreenOptions() {
   };
 }
 
-const ownsBottomInset = { sceneStyle: { backgroundColor: colors.bg } };
+// The worker home owns its bottom inset (its docked slide) and, like the
+// client home, is white top to bottom.
+const ownsBottomInset = { sceneStyle: { backgroundColor: soft.page } };
 
 function WorkerDrawer() {
   const drawerScreenOptions = useDrawerScreenOptions();

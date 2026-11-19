@@ -50,7 +50,7 @@ export function HomeTopBar({
           style={s.branchRow}
         >
           <Text style={s.branch} numberOfLines={1}>{branch}</Text>
-          <Icon name="chevron-down" size={9} color={colors.textMuted} />
+          {onBranch ? <Icon name="chevron-down" size={9} color={colors.textMuted} /> : null}
         </TouchableOpacity>
       </View>
 

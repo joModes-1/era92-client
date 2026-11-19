@@ -508,10 +508,11 @@ export const noFocusRing = { outlineStyle: 'none' } as any;
 export const brandTheme = {
   border: colors.border,
   shadowColor: '#3C1E96',
-  // Hero: violet into deep navy, orange glow in the corner.
-  hero: ['#7B16D6', '#2B2D9E', '#16205C'] as const,
-  heroLocations: [0, 0.42, 1] as const,
-  heroAngle: 215,
+  // Hero: the brand's own violet into navy (the gradient buttons' colours),
+  // orange glow in the corner.
+  hero: [core.violet, core.navy] as const,
+  heroLocations: [0, 0.8] as const,
+  heroAngle: 120,
   // Orange bleeding in from the top-right corner only.
   glowStops: ['rgba(255,114,29,0)', 'rgba(255,114,29,0)', 'rgba(255,114,29,0.38)'] as const,
   // Type and lines on the hero's dark surface.

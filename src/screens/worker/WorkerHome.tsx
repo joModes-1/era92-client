@@ -1,26 +1,21 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import {
-  View, Text, StyleSheet, ScrollView, RefreshControl, TouchableOpacity, Vibration, Image, Switch, BackHandler,
-} from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { View, StyleSheet, ScrollView, RefreshControl, Vibration, BackHandler } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../api/AuthContext';
 import { api } from '../../api';
-import { colors, radii, spacing, weight, staffType, staffText, brandTheme, soft, tint, jk, offer as O } from '../../theme';
-import AppTopBar from '../../components/AppTopBar';
-import Icon from '../../components/Icon';
+import { colors, spacing, soft } from '../../theme';
+import { HomeTopBar } from '../client/HomeParts';
 import { useAppAlert } from '../../components/AppAlert';
-import { artFor } from '../client/serviceArt';
-import { Surface, SkeletonList, SlideToConfirm, StageStepper } from '../../components/ui';
-import { IconChip, Pill } from '../../components/admin/kit';
-import LineIcon from '../../components/admin/LineIcon';
+import { SkeletonList, SlideToConfirm } from '../../components/ui';
 import { OfferCard, OfferFullScreen, OfferClosed } from './WorkerOffer';
+import CurrentCarCard from './WorkerCar';
+import { DutyBar, StatusCard, QuickTiles, DoneToday, SectionTitle } from './WorkerHomeParts';
 
 /**
  * The worker's home (design: "Worker home, job offer, countdown, timed out"):
  *
- *  A. No job yet — today's takings, the on-duty switch, "Ready for a car",
+ *  A. No job yet — the on-duty switch, "Ready for a car",
  *     cars waiting (none), cash to hand in, the week's rank, and what was
  *     done today.
  *  B. A job is offered — the offer inline, with a swipe to take it and a
@@ -36,7 +31,6 @@ import { OfferCard, OfferFullScreen, OfferClosed } from './WorkerOffer';
 
 const METHOD_LABEL: Record<string, string> = { cash: 'Cash', mtn: 'MTN Mobile Money', airtel: 'Airtel Money', points: 'Points' };
 const ugx = (n: any) => Number(n || 0).toLocaleString();
-const STEPS = ['Washing', 'Ready', 'Paid'];
 
 /** Server error codes in words a worker can act on. */
 function friendlyError(e: any): string {
@@ -58,20 +52,7 @@ function minutesSince(iso?: string) {
   return Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 60000));
 }
 
-const hhmm = (iso?: string) => {
-  if (!iso) return '';
-  const d = new Date(iso);
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-};
 
-/** A number in a round badge: "Cars waiting 0" (dark), "Done today 3" (green). */
-function CountBadge({ n, color }: { n: number; color: string }) {
-  return (
-    <View style={[styles.countBadge, { backgroundColor: color }]}>
-      <Text style={styles.countText}>{n}</Text>
-    </View>
-  );
-}
 
 export default function WorkerHome({ navigation }: any) {
   const { actor } = useAuth();
@@ -285,12 +266,9 @@ export default function WorkerHome({ navigation }: any) {
   const amountDue = current
     ? (current.is_redemption || paidOnline ? 0 : Number(current.quoted_amount_ugx) - Number(current.points_value_ugx || 0))
     : 0;
-  const stageIndex = current?.stage === 'ready' ? 1 : 0;
   const stageMinutes = current ? minutesSince(current.stage === 'ready' ? current.wash_done_at : current.started_at) : null;
   const stale = current?.stage === 'ready' && !!current?.stale;
 
-  const carsToday = doneToday.length;
-  const takingsToday = doneToday.reduce((t: number, r: any) => t + Number(r.amount_ugx || 0), 0);
   const me = board.find((r: any) => r.id === actor?.id);
   const owes = Number(wallet?.owes_ugx || 0);
 
@@ -309,14 +287,13 @@ export default function WorkerHome({ navigation }: any) {
 
   const full = waiting.find((w: any) => w.id === fullId) || null;
   const leftOf = (w: any) => Math.max(0, Math.ceil((w._endsAt - Date.now()) / 1000));
-  // Design B leaves the duty row out while an offer is up — unless the worker
-  // is off duty, when it is the one way back on.
-  const showDuty = !dutyOn || waiting.length === 0;
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <AppTopBar
-        context={actor?.branch_name || 'Car Wash'}
+      <HomeTopBar
+        branch={actor?.branch_name || 'Car Wash'}
+        points={Number(me?.points || 0)}
+        onPoints={() => navigation.navigate('Leaderboard')}
         onMenu={() => navigation.openDrawer?.()}
       />
 
@@ -329,120 +306,28 @@ export default function WorkerHome({ navigation }: any) {
             showsVerticalScrollIndicator={false}
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} />}
           >
-            {/* ── Today ── */}
-            <TouchableOpacity
-              style={styles.card}
-              activeOpacity={0.8}
-              onPress={() => navigation.navigate('My Account')}
-              accessibilityRole="button"
-              accessibilityLabel={`Today: ${carsToday} cars, UGX ${ugx(takingsToday)}. Open My Account`}
-            >
-              <View style={styles.line}>
-                <IconChip icon="coins" tone="warning" square />
-                <Text style={styles.cardTitle}>Today</Text>
-                <Text style={styles.cardRight} numberOfLines={1}>
-                  {carsToday} {carsToday === 1 ? 'car' : 'cars'} · UGX {ugx(takingsToday)}
-                </Text>
-                <LineIcon name="chevron-right" size={13} color={colors.textSecondary} />
-              </View>
-            </TouchableOpacity>
+            {/* ── The duty switch ── */}
+            <DutyBar dutyOn={dutyOn} online={online} onToggle={() => toggleDuty(!dutyOn)} />
 
-            {/* ── On duty ── */}
-            {showDuty ? (
-              <View style={styles.card}>
-                <View style={styles.line}>
-                  <IconChip icon="bolt" tone={dutyOn ? 'success' : 'neutral'} square />
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.cardTitle}>{dutyOn ? "You're on duty" : "You're off duty"}</Text>
-                    <Text style={styles.cardSub}>
-                      {dutyOn
-                        ? `New jobs reach you first. ${online} ${online === 1 ? 'worker' : 'workers'} online.`
-                        : `You won't be offered new cars. ${online} ${online === 1 ? 'worker' : 'workers'} online.`}
-                    </Text>
-                  </View>
-                  <Switch
-                    value={dutyOn}
-                    onValueChange={toggleDuty}
-                    trackColor={{ false: colors.border, true: O.duty }}
-                    thumbColor="#fff"
-                    ios_backgroundColor={colors.border}
-                    {...({ activeThumbColor: '#fff', activeTrackColor: O.duty } as any)}
-                    accessibilityLabel="On duty"
-                  />
-                </View>
-              </View>
-            ) : null}
-
-            {/* ── The car you're on ── */}
+            {/* ── The car you're on, or where you stand ── */}
             {current ? (
-              <Surface elevation="md" padded="lg" style={styles.carCard}>
-                <View style={styles.carHead}>
-                  <View style={[styles.chip, current.stage === 'ready' ? styles.chipReady : styles.chipWashing]}>
-                    <Text style={[styles.chipText, { color: current.stage === 'ready' ? colors.successText : colors.warningText }]}>
-                      {current.stage === 'ready' ? 'Ready · collect payment' : 'Being washed'}
-                    </Text>
-                  </View>
-                  {stageMinutes != null ? (
-                    <View style={styles.timer} accessibilityLabel={`${stageMinutes} minutes in this stage${stale ? ', waiting too long' : ''}`}>
-                      <Icon name="clock" size={15} color={stale ? colors.error : staffText.muted} />
-                      <Text style={[styles.timerText, stale && styles.timerLate]}>{stageMinutes} min</Text>
-                    </View>
-                  ) : null}
-                </View>
-
-                <StageStepper steps={STEPS} current={stageIndex} />
-
-                <View style={styles.carId}>
-                  {current.plate ? <Text style={styles.plate}>{current.plate}</Text> : null}
-                  <Text style={current.plate ? styles.carLine : styles.carLineBig}>
-                    {current.vehicle_class_name} · {current.service_name}
-                  </Text>
-                  {current.client_name ? (
-                    <View style={styles.clientRow}>
-                      <Icon name="user-check" size={15} color={colors.success} />
-                      <Text style={styles.clientName} numberOfLines={1}>{current.client_name}</Text>
-                    </View>
-                  ) : null}
-                </View>
-
-                {current.stage === 'ready' ? (
-                  <View style={styles.payBox}>
-                    <Text style={styles.payLabel}>{amountDue > 0 ? 'Collect' : paidOnline ? 'Paid online' : 'Nothing to collect'}</Text>
-                    {amountDue > 0 ? <Text style={styles.payAmount}>UGX {ugx(amountDue)}</Text> : null}
-                    <Text style={styles.payMethod}>{payLine}</Text>
-                  </View>
-                ) : null}
-
-                {Number(current.worker_points_to_award) > 0 ? (
-                  <Text style={styles.pointsLine}>+{current.worker_points_to_award} points for you when it's paid</Text>
-                ) : null}
-              </Surface>
+              <CurrentCarCard
+                car={current}
+                minutes={stageMinutes}
+                stale={stale}
+                amountDue={amountDue}
+                paidOnline={paidOnline}
+                payLine={payLine}
+              />
             ) : (
-              <LinearGradient colors={['#EEF1FF', '#F4F0FF']} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={styles.freeCard}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.freeTitle}>Ready for a car</Text>
-                  <Text style={styles.freeMsg}>Take one below, or the next booking comes to you.</Text>
-                </View>
-                {/* The client home's car artwork, facing the same way. */}
-                <Image
-                  source={artFor('Full car wash').image}
-                  style={[styles.freeArt, artFor('Full car wash').flip && { transform: [{ scaleX: -1 }] }]}
-                  resizeMode="contain"
-                  accessibilityIgnoresInvertColors
-                />
-              </LinearGradient>
+              <StatusCard dutyOn={dutyOn} waiting={waiting.length} onGoOnDuty={() => toggleDuty(true)} />
             )}
 
-            {/* ── Cars waiting ── */}
-            <View style={{ gap: 12 }}>
-              <View style={styles.sectionRow}>
-                <Text style={styles.section}>Cars waiting</Text>
-                <CountBadge n={waiting.length} color={colors.text} />
-              </View>
-              {waiting.length === 0 ? (
-                <Text style={styles.noneWaiting}>No cars waiting. New bookings show up here.</Text>
-              ) : (
-                waiting.map((w: any) => (
+            {/* ── Cars waiting (only when there are some) ── */}
+            {waiting.length > 0 ? (
+              <View style={{ gap: 10 }}>
+                <SectionTitle title="Cars waiting" meta={`${waiting.length} ${waiting.length === 1 ? 'car' : 'cars'}`} />
+                {waiting.map((w: any) => (
                   <OfferCard
                     key={w.id}
                     wash={w}
@@ -453,64 +338,23 @@ export default function WorkerHome({ navigation }: any) {
                     taking={taking === w.id}
                     onTake={() => takeCar(w.id)}
                     onOpen={() => showFull(w.id)}
+                    busyWithCar={!!current}
                   />
-                ))
-              )}
-            </View>
-
-            {/* ── Cash to hand in ── */}
-            {owes > 0 ? (
-              <TouchableOpacity style={styles.card} activeOpacity={0.8} onPress={() => navigation.navigate('My Account')} accessibilityRole="button">
-                <View style={styles.line}>
-                  <IconChip icon="money-bill-wave" tone="warning" square />
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.cardTitle}>Cash to hand in: UGX {ugx(owes)}</Text>
-                    <Text style={styles.cardSub}>Give it to your manager</Text>
-                  </View>
-                  <Pill tone="warn" label="Hand over" />
-                </View>
-              </TouchableOpacity>
+                ))}
+              </View>
             ) : null}
 
-            {/* ── This week's board ── */}
-            <TouchableOpacity style={styles.card} activeOpacity={0.8} onPress={() => navigation.navigate('Leaderboard')} accessibilityRole="button">
-              <View style={styles.line}>
-                <IconChip icon="trophy" tone="warning" square />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.cardTitle}>{me ? `#${me.rank} this week` : 'This week'}</Text>
-                  <Text style={styles.cardSub}>
-                    {me ? `${ugx(me.points)} points · see the leaderboard` : 'Wash a car to get on the board'}
-                  </Text>
-                </View>
-                <LineIcon name="chevron-right" size={13} color={colors.textSecondary} />
-              </View>
-            </TouchableOpacity>
+            {/* ── Cash to hand in · this week ── */}
+            <QuickTiles
+              owes={owes}
+              rank={me ? Number(me.rank) : null}
+              weekPoints={Number(me?.points || 0)}
+              onCash={() => navigation.navigate('My Account')}
+              onBoard={() => navigation.navigate('Leaderboard')}
+            />
 
             {/* ── Done today ── */}
-            {doneToday.length > 0 ? (
-              <View style={{ gap: 12 }}>
-                <View style={styles.sectionRow}>
-                  <Text style={styles.section}>Done today</Text>
-                  <CountBadge n={doneToday.length} color={O.duty} />
-                </View>
-                <View style={[styles.card, { paddingVertical: 4 }]}>
-                  {doneToday.map((r: any, i: number) => (
-                    <View key={r.id} style={[styles.doneRow, i === doneToday.length - 1 && { borderBottomWidth: 0 }]}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.donePlate} numberOfLines={1}>{r.plate || r.job_no}</Text>
-                        <Text style={styles.doneSub} numberOfLines={1}>
-                          {[r.vehicle_class_name, r.service_name, hhmm(r.settled_at)].filter(Boolean).join(' · ')}
-                        </Text>
-                      </View>
-                      {Number(r.worker_points_to_award) > 0 ? (
-                        <View style={styles.ptsPill}><Text style={styles.ptsText}>+{r.worker_points_to_award} pts</Text></View>
-                      ) : null}
-                      <Text style={styles.doneAmount}>{ugx(r.amount_ugx)}</Text>
-                    </View>
-                  ))}
-                </View>
-              </View>
-            ) : null}
+            {doneToday.length > 0 ? <DoneToday rows={doneToday} /> : null}
           </ScrollView>
 
           {/* ── The one action for the current stage, near the thumb ── */}
@@ -559,61 +403,9 @@ export default function WorkerHome({ navigation }: any) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.bg },
-  body: { padding: spacing.lg, paddingBottom: spacing.xxxl, gap: 14 },
-
-  // White cards on the page, as on the admin pages.
-  card: { backgroundColor: colors.bgCard, borderRadius: 20, paddingVertical: 14, paddingHorizontal: 14, ...soft.cardShadow },
-  line: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  cardTitle: { fontSize: 15, ...jk.bold, color: colors.text },
-  cardSub: { fontSize: 12, lineHeight: 17, ...jk.medium, color: colors.textSecondary, marginTop: 2 },
-  cardRight: { flex: 1, fontSize: 15, ...jk.bold, color: colors.text, textAlign: 'right', ...staffType.tabular },
-
-  sectionRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  section: { fontSize: 18, ...jk.heavy, color: colors.text },
-  countBadge: { minWidth: 22, height: 22, borderRadius: 11, paddingHorizontal: 6, alignItems: 'center', justifyContent: 'center' },
-  countText: { fontSize: 12, ...jk.bold, color: '#fff' },
-  noneWaiting: { fontSize: 13, ...jk.medium, color: colors.textSecondary, marginTop: -4 },
-
-  freeCard: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, padding: spacing.lg, borderRadius: 20, borderWidth: 1, borderColor: '#E3E6F7' },
-  freeArt: { width: 96, height: 74 },
-  freeTitle: { fontSize: 17, ...jk.heavy, color: colors.text },
-  freeMsg: { fontSize: 13, lineHeight: 18, ...jk.medium, color: colors.textSecondary, marginTop: 4 },
-
-  doneRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: soft.line },
-  donePlate: { fontSize: 15, ...jk.bold, color: colors.text },
-  doneSub: { fontSize: 12, ...jk.medium, color: colors.textSecondary, marginTop: 2 },
-  ptsPill: { backgroundColor: tint.success.bg, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
-  ptsText: { fontSize: 11, ...jk.bold, color: tint.success.text },
-  doneAmount: { minWidth: 54, textAlign: 'right', fontSize: 15, ...jk.bold, color: colors.text, ...staffType.tabular },
-
-  // Current car — the one card that asks for action: highest, heaviest shadow
-  carCard: { gap: spacing.lg },
-  carHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  chip: { borderRadius: radii.full, paddingHorizontal: 10, paddingVertical: 4 },
-  chipWashing: { backgroundColor: colors.warningSoft },
-  chipReady: { backgroundColor: colors.successSoft },
-  chipText: { ...staffType.caption },
-  timer: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  timerText: { ...staffType.label, ...staffType.tabular, color: staffText.secondary },
-  timerLate: { color: colors.error },
-  carId: { gap: 6, alignItems: 'flex-start' },
-  // Drawn like a number plate — boxed, bold, tracked — because that is what
-  // the worker matches it against in the bay. The biggest text on the card.
-  plate: {
-    fontSize: 28, lineHeight: 34, fontWeight: weight.bold, color: colors.text, letterSpacing: 2,
-    borderWidth: 2, borderColor: colors.ink[800], borderRadius: radii.sm,
-    paddingHorizontal: 12, paddingVertical: 2, backgroundColor: colors.warningSoft, overflow: 'hidden',
-  },
-  carLine: { ...staffType.rowTitle },
-  carLineBig: { fontSize: 24, lineHeight: 30, fontWeight: weight.bold, color: colors.text },
-  clientRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  clientName: { ...staffType.secondary, fontWeight: weight.semibold, color: colors.successText },
-  payBox: { padding: spacing.lg, borderRadius: radii.md, backgroundColor: colors.bg, gap: 2 },
-  payLabel: { ...staffType.caption, color: staffText.secondary },
-  payAmount: { ...staffType.hero },
-  payMethod: { ...staffType.secondary },
-  pointsLine: { ...staffType.meta, color: colors.primaryText, fontWeight: weight.semibold },
+  // White top to bottom, as on the client home.
+  container: { flex: 1, backgroundColor: soft.page },
+  body: { padding: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.xxxl, gap: 16 },
 
   // Docked action bar
   dock: {

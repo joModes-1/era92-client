@@ -1,12 +1,10 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { api } from '../../api';
-import { colors, font, spacing, weight, shadow, Tone, tone as toneMap, staffType, staffText } from '../../theme';
+import { colors, spacing, weight, Tone, tone as toneMap, staffType, staffText } from '../../theme';
 import { ReportScreen } from '../manager/reportHelpers';
 import Icon from '../../components/Icon';
-import { useAppAlert } from '../../components/AppAlert';
-import { Surface, SectionHeader, EmptyState, Segmented, HeroCard, heroText } from '../../components/ui';
-import GradientButton from '../../components/GradientButton';
+import { Surface, SectionHeader, EmptyState, Segmented } from '../../components/ui';
 
 /**
  * My Account — the worker's wallet (server: modules/wallet).
@@ -17,8 +15,8 @@ import GradientButton from '../../components/GradientButton';
  *   Cash to hand in  cash from cash washes less the commission they kept
  *                    out of it; it clears when a manager confirms receiving it.
  *
- * Withdrawing to MTN / Airtel needs a payout provider (Phase 6), so the
- * button says so instead of pretending to work.
+ * Withdrawing to MTN / Airtel needs a payout provider (Phase 6); until then
+ * there is no withdraw button at all.
  */
 
 const ugx = (n: any) => Number(n || 0).toLocaleString();
@@ -45,7 +43,6 @@ const timeLabel = (iso?: string) =>
  * mobile-money apps do — the phone is out in the open at the bay.
  */
 function WalletSections({ w, hidden, onToggleHidden }: { w: any; hidden: boolean; onToggleHidden: () => void }) {
-  const alert = useAppAlert();
   const account = Number(w.account_ugx ?? w.balance_ugx ?? 0);
   const owes = Number(w.owes_ugx || 0);
   const lastHandover = (w.ledger || []).find((r: any) => r.kind === 'cash_handover');
@@ -54,40 +51,38 @@ function WalletSections({ w, hidden, onToggleHidden }: { w: any; hidden: boolean
   const show = (n: number) => (hidden ? '••••••' : ugx(n));
 
   return (
-    <>
-      {/* Account — the same hero card every role's headline figure uses */}
-      <HeroCard
-        label="Account"
-        prefix="UGX"
-        value={`${account < 0 && !hidden ? '−' : ''}${show(Math.abs(account))}`}
-        caption={account < 0 ? 'Below zero' : 'Available to withdraw'}
-        badge={
-          <TouchableOpacity
-            onPress={onToggleHidden}
-            hitSlop={12}
-            accessibilityRole="button"
-            accessibilityLabel={hidden ? 'Show amounts' : 'Hide amounts'}
-          >
-            <Icon name={hidden ? 'eye-slash' : 'eye'} size={19} color={heroText.muted.color} />
-          </TouchableOpacity>
-        }
-      >
-        <GradientButton
-          variant="secondary"
-          size="lg"
-          full
-          icon="arrow-up"
-          title="Withdraw · soon"
-          onPress={() => alert('Withdrawals are coming soon', 'You will send your account to MTN or Airtel Money from here.')}
-          style={styles.withdrawBtn}
-        />
-      </HeroCard>
+    <View>
+      <View style={styles.moneyHead}>
+        <SectionHeader title="Your money" />
+        <TouchableOpacity
+          onPress={onToggleHidden}
+          hitSlop={12}
+          accessibilityRole="button"
+          accessibilityLabel={hidden ? 'Show amounts' : 'Hide amounts'}
+          style={styles.eye}
+        >
+          <Icon name={hidden ? 'eye-slash' : 'eye'} size={17} color={staffText.muted} />
+        </TouchableOpacity>
+      </View>
 
-      {/* Cash to hand in — its own thing, never mixed into the account */}
+      {/* The two pots as plain rows of one card — never one mixed number */}
       <View style={styles.cash}>
         <View style={styles.cashRow}>
+          <View style={[styles.cashIcon, { backgroundColor: colors.primarySoft }]}>
+            <Icon name="wallet" size={19} color={colors.primary} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.cashTitle}>Your account</Text>
+            <Text style={styles.cashSub}>{account < 0 ? 'Below zero' : 'Commission paid to you'}</Text>
+          </View>
+          <Text style={[styles.cashAmount, styles.accountAmount]}>
+            <Text style={styles.cashPrefix}>UGX </Text>{account < 0 && !hidden ? '−' : ''}{show(Math.abs(account))}
+          </Text>
+        </View>
+
+        <View style={[styles.cashRow, styles.rowLine]}>
           <View style={[styles.cashIcon, { backgroundColor: owes > 0 ? colors.warningSoft : colors.successSoft }]}>
-            <Icon name={owes > 0 ? 'hand-holding-usd' : 'check'} size={20} color={owes > 0 ? colors.warning : colors.success} />
+            <Icon name={owes > 0 ? 'hand-holding-usd' : 'check'} size={19} color={owes > 0 ? colors.warning : colors.success} />
           </View>
           <View style={{ flex: 1 }}>
             <Text style={styles.cashTitle}>Cash to hand in</Text>
@@ -101,7 +96,7 @@ function WalletSections({ w, hidden, onToggleHidden }: { w: any; hidden: boolean
           <Text style={styles.cashFoot}>Last handed in {handedDay} · {timeLabel(lastHandover.created_at)}</Text>
         ) : null}
       </View>
-    </>
+    </View>
   );
 }
 
@@ -274,9 +269,12 @@ function WalletBody({ w }: { w: any }) {
 }
 
 const styles = StyleSheet.create({
-  withdrawBtn: { marginTop: spacing.lg },
+  moneyHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  eye: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', marginBottom: spacing.sm },
+  rowLine: { marginTop: spacing.md, paddingTop: spacing.md, borderTopWidth: 1, borderTopColor: colors.borderLight },
+  accountAmount: { color: colors.text },
 
-  // Cash to hand in — a separate line of its own
+  // Your money — the account and the cash to hand in, one card
   cash: {
     backgroundColor: colors.bgCard,
     borderRadius: 20,
