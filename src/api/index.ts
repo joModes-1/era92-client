@@ -243,6 +243,8 @@ export const api = {
 
   // Me
   getMe: () => req('GET', '/me'),
+  /** The worker home's "You're on duty" switch. */
+  setDuty: (on_duty: boolean) => req('PUT', '/me/duty', { on_duty }),
   updateMe: (data: { full_name?: string; email?: string; phone?: string }) => req('PATCH', '/me', data),
 
   // Staff

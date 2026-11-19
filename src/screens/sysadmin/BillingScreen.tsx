@@ -1,29 +1,14 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, RefreshControl, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Linking } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { api } from '../../api';
-import { colors, font, spacing, weight, tracking } from '../../theme';
-import Badge from '../../components/Badge';
-import ScreenHeader from '../../components/ScreenHeader';
+import { colors, soft, tint, jk, staffType } from '../../theme';
 import { useAppAlert } from '../../components/AppAlert';
-import {
-  Surface, SectionHeader, EmptyState, SkeletonList, ListRow,
-  Field, FormSheet, PillPicker, HeroCard, StatGrid, MonthBars, Hint,
-} from '../../components/ui';
-
-const ugx = (n: any) => Number(n || 0).toLocaleString();
-
-const compact = (n: number) => {
-  const v = Math.abs(n);
-  if (v >= 1_000_000) return `${(n / 1_000_000).toFixed(v >= 10_000_000 ? 0 : 1)}M`;
-  if (v >= 1_000) return `${Math.round(n / 1000)}K`;
-  return `${Math.round(n)}`;
-};
-
-const monthLabel = (m: string) => {
-  const [y, mm] = m.split('-');
-  return new Date(Number(y), Number(mm) - 1, 1).toLocaleDateString(undefined, { month: 'short' });
-};
+import { Field, FormSheet, PillPicker } from '../../components/ui';
+import AdminScreen from '../../components/admin/AdminScreen';
+import { Card, Pill, Row, Btn, Btns, kitStyles } from '../../components/admin/kit';
+import Icon from '../../components/admin/LineIcon';
+import { Initials, MiniTiles, SectionHead, ugx, compact } from './platformParts';
 
 const CYCLES = [
   { value: 'monthly', label: 'Monthly' },
@@ -37,8 +22,8 @@ export default function BillingScreen() {
 
   const [data, setData] = useState<any>(null);
   const [plans, setPlans] = useState<any[]>([]);
+  const [orgs, setOrgs] = useState<any[]>([]);
   const [loaded, setLoaded] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
 
   // Plan editor — one sheet for both create and edit; `editing` decides which.
   const [sheet, setSheet] = useState(false);
@@ -52,18 +37,13 @@ export default function BillingScreen() {
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
-    const [b, p] = await Promise.allSettled([api.billingSummary(), api.listPlans()]);
+    const [b, p, o] = await Promise.allSettled([api.billingSummary(), api.listPlans(), api.platformOrgs()]);
     if (b.status === 'fulfilled' && b.value) setData(b.value);
     if (p.status === 'fulfilled' && Array.isArray(p.value)) setPlans(p.value);
+    if (o.status === 'fulfilled' && Array.isArray(o.value)) setOrgs(o.value);
   }, []);
 
   useEffect(() => { (async () => { await load(); setLoaded(true); })(); }, [load]);
-
-  const onRefresh = async () => {
-    setRefreshing(true);
-    await load();
-    setRefreshing(false);
-  };
 
   const openNew = () => {
     setEditing(null);
@@ -134,188 +114,167 @@ export default function BillingScreen() {
     }
   };
 
-  if (!loaded) {
-    return (
-      <View style={styles.container}>
-        <ScreenHeader title="Billing" subtitle="What the platform earns" />
-        <ScrollView contentContainerStyle={styles.body}><SkeletonList rows={5} /></ScrollView>
-      </View>
-    );
-  }
-
   const s = data?.summary || {};
-  const onboarding = data?.onboarding || [];
   const attention = data?.needs_attention || [];
-
   const mrr = Number(s.mrr_ugx || 0);
-  const collectedMonth = Number(s.collected_this_month || 0);
+  const paying = Number(s.paying_orgs || 0);
+  const trial = Number(s.trial_orgs || 0);
+  const overdue = Number(s.past_due_orgs || 0);
+  const cancelled = Number(s.cancelled_orgs || 0);
+  const tenancy = paying + trial + overdue + cancelled;
+  const phoneOf = (id: string) => orgs.find((o) => o.id === id)?.phone || null;
+
+  // Newest organisations first.
+  const newest = [...orgs]
+    .sort((x, y) => String(y.onboarded_at || y.created_at).localeCompare(String(x.onboarded_at || x.created_at)))
+    .slice(0, 5);
+  const joined = (iso: string) => new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+  const daysTo = (iso?: string) => (iso ? Math.ceil((new Date(String(iso).slice(0, 10) + 'T23:59:59').getTime() - Date.now()) / 86400000) : null);
+  const standing = (o: any) => {
+    if (o.billing_status === 'trial') {
+      const d = daysTo(o.trial_ends_at);
+      return d == null ? 'trial' : d <= 0 ? 'trial ended' : `trial ends in ${d} day${d === 1 ? '' : 's'}`;
+    }
+    if (o.billing_status === 'past_due') return 'overdue';
+    if (o.billing_status === 'cancelled') return 'cancelled';
+    return o.plan_name ? `paying · ${o.plan_name}` : 'paying';
+  };
 
   return (
-    <View style={styles.container}>
-      {/* No stat rail here: paying / trial / overdue are the Tenancy card
-          below, and showing them twice on one screen said nothing new. */}
-      <ScreenHeader title="Billing" subtitle="What the platform earns" />
-
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={styles.body}
-        showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} />}
-      >
-        {/* ── MRR: the platform's own headline number ── */}
-        <HeroCard
-          label="Monthly recurring revenue"
-          prefix="UGX"
-          value={ugx(mrr)}
-          caption={`from ${Number(s.paying_orgs || 0)} paying organisation${Number(s.paying_orgs) === 1 ? '' : 's'}`}
-          stats={[
-            { label: 'Collected this month', value: compact(collectedMonth) },
-            { label: 'All time', value: compact(Number(s.collected_all_time || 0)) },
-            { label: 'Onboarded', value: Number(s.onboarded_this_month || 0) },
-          ]}
-        />
-
-        {/* ── Who needs chasing ── */}
-        <View>
-          <SectionHeader title="Needs chasing" count={attention.length} />
-          {attention.length === 0 ? (
-            <Surface elevation="sm" padded="lg">
-              <EmptyState icon="check-circle" title="Nobody is overdue" message="Every subscription is current or not yet due." />
-            </Surface>
-          ) : (
-            <Surface elevation="sm" padded="sm" style={styles.listCard}>
-              {attention.map((o: any, i: number) => {
-                const d = o.days_to_due == null ? null : Number(o.days_to_due);
-                const over = d != null && d < 0;
-                return (
-                  <ListRow
-                    key={o.id}
-                    onPress={() => navigation.navigate('Org Detail', { orgId: o.id })}
-                    leading={over ? 'exclamation' : 'clock'}
-                    leadingTone={over ? 'error' : 'warning'}
-                    title={o.name}
-                    subtitle={o.plan_name || 'No plan'}
-                    meta={
-                      d == null
-                        ? 'No renewal date'
-                        : over
-                        ? `${Math.abs(d)} day${Math.abs(d) === 1 ? '' : 's'} overdue`
-                        : d === 0
-                        ? 'Due today'
-                        : `Due in ${d} day${d === 1 ? '' : 's'}`
-                    }
-                    value={o.plan_price_ugx ? ugx(o.plan_price_ugx) : '—'}
-                    valueTone={over ? 'error' : undefined}
-                    last={i === attention.length - 1}
-                  />
-                );
-              })}
-            </Surface>
-          )}
+    <AdminScreen title="Billing" subtitle="What the platform earns" large back loading={!loaded} onRefresh={load}>
+      {/* ── What the platform earns ── */}
+      <Card>
+        <Text style={styles.cardLabel}>Monthly recurring revenue</Text>
+        <View style={styles.mrrRow}>
+          <Text style={styles.mrrUnit}>UGX</Text>
+          <Text style={styles.mrr} numberOfLines={1} adjustsFontSizeToFit>{ugx(mrr)}</Text>
         </View>
+        {paying > 0 ? (
+          <View style={{ alignSelf: 'flex-start' }}><Pill tone="ok" label={`From ${paying} paying organisation${paying === 1 ? '' : 's'}`} /></View>
+        ) : (
+          <Text style={kitStyles.k}>from 0 paying organisations</Text>
+        )}
+        <MiniTiles items={[
+          { value: compact(Number(s.collected_this_month || 0)), label: 'Collected this month', tone: 'success' },
+          { value: compact(Number(s.collected_all_time || 0)), label: 'All time', tone: 'primary' },
+          { value: String(Number(s.total_orgs || 0)), label: 'Onboarded', tone: 'info' },
+        ]} />
+      </Card>
 
-        {/* ── Tenancy mix, stated rather than charted ── */}
-        <View>
-          <SectionHeader title="Tenancy" />
-          <Surface elevation="sm" padded="lg">
-            <StatGrid
-              items={[
-                { label: 'Paying', value: Number(s.paying_orgs || 0), tone: 'success' },
-                { label: 'On trial', value: Number(s.trial_orgs || 0), tone: 'info' },
-                { label: 'Overdue', value: Number(s.past_due_orgs || 0), tone: Number(s.past_due_orgs) > 0 ? 'error' : undefined },
-                { label: 'Cancelled', value: Number(s.cancelled_orgs || 0), muted: true },
-              ]}
-            />
-          </Surface>
-        </View>
-
-        {/* ── Onboarding curve ── */}
-        <View>
-          <SectionHeader title="New organisations" />
-          <Surface elevation="sm" padded="lg">
-            {onboarding.every((o: any) => Number(o.onboarded || 0) === 0) ? (
-              <EmptyState icon="chart-bar" title="No sign-ups in six months" message="New tenants will chart here as you onboard them." />
-            ) : (
-              <MonthBars
-                legend="Organisations onboarded · UGX collected below"
-                items={onboarding.map((o: any) => ({
-                  key: o.month,
-                  label: monthLabel(o.month),
-                  value: Number(o.onboarded || 0),
-                  sub: compact(Number(o.collected_ugx || 0)),
-                }))}
+      {/* ── Who needs chasing ── */}
+      <SectionHead title="Needs chasing" count={attention.length} countColor={attention.length ? '#D92D20' : '#0FA968'} />
+      {attention.length === 0 ? (
+        <Card>
+          <View style={styles.empty}>
+            <View style={styles.emptyIcon}><Icon name="check" size={26} color={tint.success.fg} /></View>
+            <Text style={styles.emptyTitle}>Nobody is overdue</Text>
+            <Text style={styles.emptySub}>Every subscription is current or not yet due.</Text>
+          </View>
+        </Card>
+      ) : attention.map((o: any, i: number) => {
+        const d = o.days_to_due == null ? null : Number(o.days_to_due);
+        const late = d != null && d < 0 ? Math.abs(d) : 0;
+        const phone = phoneOf(o.id);
+        return (
+          <Card key={o.id}>
+            <View style={styles.chaseHead}>
+              <Initials name={o.name} index={i} tone={late > 3 ? 'error' : 'warning'} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.chaseName} numberOfLines={1}>{o.name}</Text>
+                <Text style={kitStyles.k} numberOfLines={1}>
+                  {o.plan_name || 'No plan'}{o.plan_price_ugx ? ` · UGX ${ugx(o.plan_price_ugx)} per month` : ''}
+                </Text>
+              </View>
+              <Pill
+                tone={late > 3 ? 'bad' : late > 0 ? 'warn' : 'blue'}
+                label={late > 0 ? `${late} day${late === 1 ? '' : 's'} late` : d === 0 ? 'Due today' : d == null ? 'No due date' : `Due in ${d} day${d === 1 ? '' : 's'}`}
               />
-            )}
-          </Surface>
-        </View>
-
-        {/* ── The price list ── */}
-        <View>
-          <SectionHeader
-            title="Plans"
-            count={plans.length}
-            action="New plan"
-            onAction={openNew}
-          />
-          {plans.length === 0 ? (
-            <Surface elevation="sm" padded="lg">
-              <EmptyState icon="tags" title="No plans yet" message="Create the plans you sell against." />
-            </Surface>
-          ) : (
-            <View style={{ gap: spacing.sm }}>
-              {plans.map((p: any) => (
-                <Surface key={p.id} elevation="sm" style={[styles.planCard, !p.active && styles.planOff]}>
-                  <View style={styles.planHead}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.planName} numberOfLines={1}>{p.name}</Text>
-                      <Text style={styles.planCode} numberOfLines={1}>
-                        {p.code} · {p.max_branches == null ? 'unlimited branches' : `up to ${p.max_branches} branch${p.max_branches === 1 ? '' : 'es'}`}
-                      </Text>
-                    </View>
-                    <View style={{ alignItems: 'flex-end' }}>
-                      <Text style={styles.planPrice}>
-                        {Number(p.price_ugx) > 0 ? ugx(p.price_ugx) : 'Free'}
-                      </Text>
-                      <Text style={styles.planCycle}>{p.billing_cycle}</Text>
-                    </View>
-                  </View>
-
-                  {p.description ? (
-                    <Text style={styles.planDesc} numberOfLines={2}>{p.description}</Text>
-                  ) : null}
-
-                  <View style={styles.planFoot}>
-                    <Badge
-                      label={`${p.org_count} org${Number(p.org_count) === 1 ? '' : 's'}`}
-                      tone={Number(p.org_count) > 0 ? 'primary' : 'neutral'}
-                      small
-                    />
-                    {Number(p.paying_org_count) > 0 && (
-                      <Badge label={`${p.paying_org_count} paying`} tone="success" small />
-                    )}
-                    {!p.active && <Badge label="Retired" tone="neutral" small />}
-                    <View style={{ flex: 1 }} />
-                    <TouchableOpacity onPress={() => openEdit(p)} hitSlop={8} activeOpacity={0.6}>
-                      <Text style={styles.planAction}>Edit</Text>
-                    </TouchableOpacity>
-                    <Text style={styles.planDot}>·</Text>
-                    <TouchableOpacity onPress={() => toggleActive(p)} hitSlop={8} activeOpacity={0.6}>
-                      <Text style={[styles.planAction, { color: p.active ? colors.textSecondary : colors.successText }]}>
-                        {p.active ? 'Retire' : 'Restore'}
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-                </Surface>
-              ))}
             </View>
-          )}
-        </View>
+            <View style={{ marginTop: 14 }}>
+              <Btns>
+                {phone ? <Btn small icon="phone" title="Call" onPress={() => Linking.openURL(`tel:${phone}`).catch(() => {})} /> : null}
+                <Btn small primary title="Record payment" onPress={() => navigation.navigate('Org Detail', { orgId: o.id })} />
+              </Btns>
+            </View>
+          </Card>
+        );
+      })}
 
-        <Hint>
-          Retiring a plan hides it from new assignments. Organisations already on it keep their price
-          and are not moved — change those individually.
-        </Hint>
-      </ScrollView>
+      {/* ── Tenancy ── */}
+      <SectionHead title="Tenancy" />
+      <Card>
+        <View style={styles.seg}>
+          {tenancy === 0 ? <View style={[styles.segPart, { flex: 1, backgroundColor: colors.bgSunken }]} /> : null}
+          {paying > 0 ? <View style={[styles.segPart, { flex: paying, backgroundColor: '#0FA968' }]} /> : null}
+          {trial > 0 ? <View style={[styles.segPart, { flex: trial, backgroundColor: '#3B82F6' }]} /> : null}
+          {overdue > 0 ? <View style={[styles.segPart, { flex: overdue, backgroundColor: '#F59E0B' }]} /> : null}
+          {cancelled > 0 ? <View style={[styles.segPart, { flex: cancelled, backgroundColor: '#C3C8D4' }]} /> : null}
+        </View>
+        <View style={styles.four}>
+          <Count value={paying} label="Paying" color={tint.success.text} />
+          <Count value={trial} label="On trial" color={tint.info.text} />
+          <Count value={overdue} label="Overdue" color={overdue > 0 ? tint.warning.text : colors.text} />
+          <Count value={cancelled} label="Cancelled" color={colors.textMuted} />
+        </View>
+      </Card>
+
+      {/* ── New organisations ── */}
+      {newest.length > 0 ? (
+        <>
+          <SectionHead title="New organisations" />
+          <Card flush>
+            {newest.map((o, i) => (
+              <Row
+                key={o.id}
+                leading={<Initials name={o.name} index={i} />}
+                title={o.name}
+                sub={`Joined ${joined(o.onboarded_at || o.created_at)} · ${standing(o)}`}
+                chevron
+                last={i === newest.length - 1}
+                onPress={() => navigation.navigate('Org Detail', { orgId: o.id })}
+              />
+            ))}
+          </Card>
+        </>
+      ) : null}
+
+      {/* ── The price list ── */}
+      <View style={styles.plansHead}>
+        <SectionHead title="Plans" count={plans.length} countColor={colors.primary} />
+        <Btn small icon="plus" title="New plan" onPress={openNew} />
+      </View>
+      {plans.length === 0 ? (
+        <Card flush><Row title="No plans yet" sub="Create the plans you sell against" last /></Card>
+      ) : plans.map((p: any) => (
+        <Card key={p.id} style={!p.active ? styles.planOff : undefined}>
+          <View style={styles.planHead}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.planName} numberOfLines={1}>{p.name}</Text>
+              <Text style={kitStyles.k} numberOfLines={1}>
+                {p.code} · {p.max_branches == null ? 'unlimited branches' : `up to ${p.max_branches} branch${p.max_branches === 1 ? '' : 'es'}`}
+              </Text>
+            </View>
+            <View style={{ alignItems: 'flex-end' }}>
+              <Text style={styles.planPrice}>{Number(p.price_ugx) > 0 ? ugx(p.price_ugx) : 'Free'}</Text>
+              <Text style={kitStyles.k}>{p.billing_cycle}</Text>
+            </View>
+          </View>
+          {p.description ? <Text style={styles.planDesc} numberOfLines={2}>{p.description}</Text> : null}
+          <View style={styles.planFoot}>
+            <Pill tone={Number(p.org_count) > 0 ? 'info' : 'neutral'} label={`${p.org_count} org${Number(p.org_count) === 1 ? '' : 's'}`} />
+            {Number(p.paying_org_count) > 0 ? <Pill tone="ok" label={`${p.paying_org_count} paying`} /> : null}
+            {!p.active ? <Pill tone="neutral" label="Retired" /> : null}
+            <View style={{ flex: 1 }} />
+            <TouchableOpacity onPress={() => openEdit(p)} hitSlop={8} activeOpacity={0.6}>
+              <Text style={styles.planAction}>Edit</Text>
+            </TouchableOpacity>
+            <Text style={kitStyles.k}>·</Text>
+            <TouchableOpacity onPress={() => toggleActive(p)} hitSlop={8} activeOpacity={0.6}>
+              <Text style={[styles.planAction, { color: p.active ? colors.textSecondary : tint.success.text }]}>{p.active ? 'Retire' : 'Restore'}</Text>
+            </TouchableOpacity>
+          </View>
+        </Card>
+      ))}
 
       <FormSheet
         visible={sheet}
@@ -346,7 +305,7 @@ export default function BillingScreen() {
           onChangeText={setPrice}
           keyboardType="numeric"
           placeholder="350000"
-          hint="Use 0 for a free or trial plan."
+          hint="Use 0 for a free or trial plan. Retiring a plan hides it from new assignments."
         />
         <PillPicker label="Billed" value={cycle} onChange={(v: any) => setCycle(v)} options={CYCLES} />
         <Field
@@ -366,30 +325,45 @@ export default function BillingScreen() {
           style={{ marginBottom: 0 }}
         />
       </FormSheet>
+    </AdminScreen>
+  );
+}
+
+/** One of the Tenancy counts. */
+function Count({ value, label, color }: { value: number; label: string; color: string }) {
+  return (
+    <View style={{ flex: 1 }}>
+      <Text style={[styles.countValue, { color }]}>{value}</Text>
+      <Text style={kitStyles.k}>{label}</Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.bg },
-  scroll: { flex: 1 },
-  body: { padding: spacing.lg, paddingBottom: spacing.xxxl, gap: spacing.xl },
+  cardLabel: { fontSize: 12, ...jk.semibold, color: colors.textSecondary },
+  mrrRow: { flexDirection: 'row', alignItems: 'baseline', gap: 8, marginTop: 6, marginBottom: 6 },
+  mrrUnit: { fontSize: 16, ...jk.bold, color: colors.textSecondary },
+  mrr: { flexShrink: 1, fontSize: 40, lineHeight: 46, ...jk.heavy, color: colors.text, ...staffType.tabular },
 
-  listCard: { paddingHorizontal: spacing.md },
+  empty: { alignItems: 'center', paddingVertical: 14, paddingHorizontal: 10 },
+  emptyIcon: { width: 56, height: 56, borderRadius: 28, backgroundColor: tint.success.bg, alignItems: 'center', justifyContent: 'center', marginBottom: 14 },
+  emptyTitle: { fontSize: 17, ...jk.heavy, color: colors.text },
+  emptySub: { fontSize: 14, lineHeight: 20, ...jk.medium, color: colors.textSecondary, marginTop: 6, textAlign: 'center' },
 
-  planCard: { gap: spacing.sm },
+  chaseHead: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  chaseName: { fontSize: 15, ...jk.heavy, color: colors.text },
+
+  seg: { flexDirection: 'row', height: 12, borderRadius: 6, overflow: 'hidden', gap: 2 },
+  segPart: { borderRadius: 6 },
+  four: { flexDirection: 'row', gap: 6, marginTop: 16 },
+  countValue: { fontSize: 24, lineHeight: 30, ...jk.heavy, ...staffType.tabular },
+
+  plansHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 6 },
   planOff: { opacity: 0.6 },
-  planHead: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
-  planName: { fontSize: font.regular, fontWeight: weight.heavy, color: colors.text, letterSpacing: tracking.tight },
-  planCode: { fontSize: font.sm, color: colors.textMuted, marginTop: 2 },
-  planPrice: { fontSize: font.lg, fontWeight: weight.black, color: colors.text, letterSpacing: tracking.tight },
-  planCycle: { fontSize: font.xs, color: colors.textMuted },
-  planDesc: { fontSize: font.sm, color: colors.textSecondary, lineHeight: 18 },
-  planFoot: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    paddingTop: spacing.md,
-    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.borderLight,
-  },
-  planAction: { fontSize: font.sm, fontWeight: weight.heavy, color: colors.primaryText },
-  planDot: { fontSize: font.sm, color: colors.ink[300] },
+  planHead: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+  planName: { fontSize: 16, ...jk.heavy, color: colors.text },
+  planPrice: { fontSize: 18, ...jk.heavy, color: colors.text, ...staffType.tabular },
+  planDesc: { fontSize: 13, lineHeight: 18, ...jk.medium, color: colors.textSecondary, marginTop: 8 },
+  planFoot: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: soft.line },
+  planAction: { fontSize: 13, ...jk.bold, color: soft.text },
 });

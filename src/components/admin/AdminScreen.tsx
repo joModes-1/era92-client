@@ -15,7 +15,7 @@ import MenuButton from '../MenuButton';
  * readers. Navigation stays in the side menu; the drawer pads the bottom.
  */
 export default function AdminScreen({
-  title, subtitle, right, loading, onRefresh, back, children,
+  title, subtitle, right, loading, onRefresh, back, large, children,
 }: {
   title: string;
   /** The slim line. Falls back to the title. */
@@ -25,6 +25,8 @@ export default function AdminScreen({
   onRefresh?: () => Promise<void>;
   /** Show a round back button (pages opened from another page). */
   back?: boolean;
+  /** Show the title big, with the subtitle under it (Billing), instead of the slim line. */
+  large?: boolean;
   children: ReactNode;
 }) {
   const navigation = useNavigation<any>();
@@ -41,9 +43,16 @@ export default function AdminScreen({
         {back && navigation.canGoBack?.() ? (
           <IconBtn icon="chevron-left" label="Back" onPress={() => navigation.goBack()} />
         ) : null}
-        <Text style={styles.lbl} numberOfLines={1} accessibilityRole="header" accessibilityLabel={subtitle ? `${title}. ${subtitle}` : title}>
-          {subtitle || title}
-        </Text>
+        {large ? (
+          <View style={{ flex: 1 }} accessibilityRole="header">
+            <Text style={styles.big} numberOfLines={1}>{title}</Text>
+            {subtitle ? <Text style={styles.bigSub} numberOfLines={1}>{subtitle}</Text> : null}
+          </View>
+        ) : (
+          <Text style={styles.lbl} numberOfLines={1} accessibilityRole="header" accessibilityLabel={subtitle ? `${title}. ${subtitle}` : title}>
+            {subtitle || title}
+          </Text>
+        )}
         <View style={styles.rt}>
           {right}
           <MenuButton onPress={() => navigation.openDrawer?.()} style={{ height: 44 }} />
@@ -66,5 +75,7 @@ const styles = StyleSheet.create({
   slim: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingTop: 22, paddingHorizontal: 18, paddingBottom: 6 },
   lbl: { flex: 1, fontSize: 14, ...jk.semibold, color: colors.textSecondary },
   rt: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  big: { fontSize: 22, lineHeight: 28, ...jk.heavy, color: colors.text },
+  bigSub: { fontSize: 13, ...jk.semibold, color: colors.textSecondary, marginTop: 1 },
   bdy: { paddingTop: 8, paddingHorizontal: 16, paddingBottom: 28, gap: 16 },
 });

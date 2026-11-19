@@ -1,60 +1,36 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, RefreshControl, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { api } from '../../api';
-import { colors, radii, font, spacing, weight } from '../../theme';
-import Icon from '../../components/Icon';
-import Badge from '../../components/Badge';
-import AppTopBar from '../../components/AppTopBar';
-import {
-  Surface, SectionHeader, EmptyState, SkeletonList, TrendChart, RankedBars, ListRow,
-  HeroCard, NoticeRow, StatGrid, MonthBars, Hint,
-} from '../../components/ui';
-import type { RankedItem } from '../../components/ui';
-
-const ugx = (n: any) => Number(n || 0).toLocaleString();
-
-const compact = (n: number) => {
-  const v = Math.abs(n);
-  if (v >= 1_000_000) return `${(n / 1_000_000).toFixed(v >= 10_000_000 ? 0 : 1)}M`;
-  if (v >= 1_000) return `${Math.round(n / 1000)}K`;
-  return `${Math.round(n)}`;
-};
-
-const monthLabel = (m: string) => {
-  const [y, mm] = m.split('-');
-  return new Date(Number(y), Number(mm) - 1, 1).toLocaleDateString(undefined, { month: 'short' });
-};
-
-function daysSince(iso: string | null) {
-  if (!iso) return null;
-  return Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
-}
+import { colors, soft, tint, jk, staffType } from '../../theme';
+import { HomeTopBar } from '../client/HomeParts';
+import { Card, Pill } from '../../components/admin/kit';
+import CssGradient from '../../components/CssGradient';
+import Icon from '../../components/admin/LineIcon';
+import { SkeletonList } from '../../components/ui';
+import { Initials, MiniTiles, SectionHead, ugx, compact } from './platformParts';
 
 /**
- * The platform admin's front page, top to bottom by how often each part
- * changes what they do next:
- *
- *  1. What the platform earns (MRR) and its paying / trial / overdue split.
- *  2. Anything wanting a decision — billing to chase, problem reports.
- *  3. Live activity across every tenant, and the two-week trend.
- *  4. Which tenants carry the platform, and which have gone quiet.
- *  5. Growth and overall size — the slow-moving context.
+ * The platform admin's Overview (design: "Platform admin: overview, billing,
+ * menu", board 1): what the platform earns, what is happening across every
+ * organisation today, the last 14 days as bars you tap, and the trials about
+ * to end.
  */
 export default function PlatformOverviewScreen() {
   const navigation = useNavigation<any>();
   const [stats, setStats] = useState<any>(null);
   const [billing, setBilling] = useState<any>(null);
+  const [orgs, setOrgs] = useState<any[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [picked, setPicked] = useState<number | null>(null);
 
   const load = useCallback(async () => {
-    // Two sources: how the platform is being used, and what it earns. Neither
-    // alone answers "how are we doing".
-    const [s, b] = await Promise.allSettled([api.platformStats(), api.billingSummary()]);
+    const [s, b, o] = await Promise.allSettled([api.platformStats(), api.billingSummary(), api.platformOrgs()]);
     if (s.status === 'fulfilled' && s.value) setStats(s.value);
     if (b.status === 'fulfilled' && b.value) setBilling(b.value);
+    if (o.status === 'fulfilled' && Array.isArray(o.value)) setOrgs(o.value);
   }, []);
 
   useEffect(() => { (async () => { await load(); setLoaded(true); })(); }, [load]);
@@ -65,261 +41,186 @@ export default function PlatformOverviewScreen() {
     setRefreshing(false);
   };
 
-  const topBar = <AppTopBar context="Platform · all organisations" onMenu={() => navigation.openDrawer?.()} />;
+  const sum = billing?.summary || {};
+  const mrr = Number(sum.mrr_ugx || 0);
+  const paying = Number(sum.paying_orgs || 0);
+  const trial = Number(sum.trial_orgs || 0);
+  const overdue = Number(sum.past_due_orgs || 0);
 
-  if (!loaded) {
-    return (
-      <SafeAreaView style={styles.container} edges={['top']}>
-        {topBar}
-        <ScrollView contentContainerStyle={styles.body}><SkeletonList rows={5} /></ScrollView>
-      </SafeAreaView>
-    );
-  }
+  const washesToday = Number(stats?.washes_today || 0);
+  const takenToday = Number(stats?.gross_today || 0);
+  const openNow = Number(stats?.open_jobs || 0);
+  const cashOut = Number(stats?.cash_with_workers || 0);
 
-  if (!stats) {
-    return (
-      <SafeAreaView style={styles.container} edges={['top']}>
-        {topBar}
-        <ScrollView contentContainerStyle={styles.body}>
-          <Surface elevation="sm" padded="lg">
-            <EmptyState icon="chart-pie" title="No platform data" message="Statistics appear once organisations are active." />
-          </Surface>
-        </ScrollView>
-      </SafeAreaView>
-    );
-  }
+  // The last 14 days; the tapped bar (or today) is the one described above them.
+  const trend: any[] = stats?.trend || [];
+  const values = trend.map((d) => Number(d.gross_ugx || 0));
+  const max = Math.max(1, ...values);
+  // Unless a bar was tapped, describe the latest day that had any washes —
+  // early in the morning "today" is still empty and would say nothing.
+  const lastBusy = values.reduce((at, v, i) => (v > 0 ? i : at), -1);
+  const sel = picked ?? (lastBusy >= 0 ? lastBusy : Math.max(0, trend.length - 1));
+  const selDay = trend[sel];
+  const dayLabel = (iso: string) =>
+    new Date(String(iso).slice(0, 10) + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
 
-  const bs = billing?.summary || {};
-  const grossMonth = Number(stats.gross_this_month || 0);
-  const grossLast = Number(stats.gross_last_month || 0);
-  // Compare like with like: this month is partial, so measure it against the
-  // same number of days last month rather than a full month it cannot match.
-  const dayOfMonth = new Date().getDate();
-  const daysLastMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 0).getDate();
-  const lastMonthToDate = grossLast * Math.min(1, dayOfMonth / daysLastMonth);
-  const delta = lastMonthToDate > 0 ? Math.round(((grossMonth - lastMonthToDate) / lastMonthToDate) * 100) : null;
-
-  const trendPoints = (stats.trend || []).map((r: any) => ({ day: r.day, value: Number(r.gross_ugx || 0) }));
-
-  const orgItems: RankedItem[] = (stats.top_orgs || []).map((o: any) => ({
-    key: o.id,
-    label: o.name,
-    value: Number(o.gross_ugx || 0),
-    meta:
-      Number(o.washes || 0) > 0
-        ? `${o.washes} washes · ${o.branch_count} branch${Number(o.branch_count) === 1 ? '' : 'es'}`
-        : `No washes this month · ${o.branch_count} branch${Number(o.branch_count) === 1 ? '' : 'es'}`,
-  }));
-
-  const attention = billing?.needs_attention || [];
-  const quiet = stats.quiet_orgs || [];
-  const openIssues = Number(stats.open_issues || 0);
-  const cashOut = Number(stats.cash_with_workers || 0);
-  const onboarding = billing?.onboarding || [];
+  // Trials, soonest to end first.
+  const trials = orgs
+    .filter((o) => o.billing_status === 'trial' && o.trial_ends_at)
+    .map((o) => ({ ...o, left: Math.ceil((new Date(String(o.trial_ends_at).slice(0, 10) + 'T23:59:59').getTime() - Date.now()) / 86400000) }))
+    .sort((a, b) => a.left - b.left);
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      {topBar}
-
+    <SafeAreaView style={s.root} edges={['top']}>
+      <HomeTopBar branch="Platform · all organisations" onMenu={() => navigation.openDrawer?.()} />
       <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={styles.body}
+        contentContainerStyle={s.body}
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} />}
       >
-        {/* ── 1. What the platform itself earns ── */}
-        <HeroCard
-          label="Monthly recurring revenue"
-          prefix="UGX"
-          value={ugx(bs.mrr_ugx)}
-          stats={[
-            { label: 'Paying', value: String(bs.paying_orgs ?? 0) },
-            { label: 'On trial', value: String(bs.trial_orgs ?? 0) },
-            { label: 'Overdue', value: String(bs.past_due_orgs ?? 0), alert: Number(bs.past_due_orgs) > 0 },
-          ]}
-        />
+        {!loaded ? <SkeletonList rows={4} /> : (
+          <>
+            {/* ── What the platform earns ── */}
+            <TouchableOpacity activeOpacity={0.9} onPress={() => navigation.navigate('Billing')} accessibilityRole="button">
+              <Card>
+                <Text style={s.cardLabel}>Monthly recurring revenue</Text>
+                <View style={s.mrrRow}>
+                  <Text style={s.mrrUnit}>UGX</Text>
+                  <Text style={s.mrr} numberOfLines={1} adjustsFontSizeToFit>{ugx(mrr)}</Text>
+                </View>
+                <View style={{ alignSelf: 'flex-start' }}>
+                  <Pill
+                    tone={paying > 0 ? 'ok' : 'neutral'}
+                    label={paying > 0 ? `From ${paying} paying organisation${paying === 1 ? '' : 's'}` : 'No paying organisations yet'}
+                  />
+                </View>
+                <MiniTiles items={[
+                  { value: String(paying), label: 'Paying', tone: 'success' },
+                  { value: String(trial), label: 'On trial', tone: 'info' },
+                  { value: String(overdue), label: 'Overdue', tone: 'warning' },
+                ]} />
+              </Card>
+            </TouchableOpacity>
 
-        {/* ── 2. Anything wanting a decision, before the numbers ── */}
-        {(attention.length > 0 || openIssues > 0) && (
-          <View>
-            <SectionHeader title="Needs you" />
-            <View style={{ gap: spacing.sm }}>
-              {attention.length > 0 && (
-                <NoticeRow
-                  tone="error"
-                  icon="file-invoice-dollar"
-                  title={`${attention.length} organisation${attention.length === 1 ? '' : 's'} to chase`}
-                  subtitle="Overdue, or due within 7 days"
-                  onPress={() => navigation.navigate('Billing')}
-                />
-              )}
-              {openIssues > 0 && (
-                <NoticeRow
-                  tone="warning"
-                  icon="life-ring"
-                  title={`${openIssues} open problem report${openIssues === 1 ? '' : 's'}`}
-                  subtitle="Reported from inside the app"
-                  onPress={() => navigation.navigate('Report a problem')}
-                />
-              )}
-            </View>
-          </View>
-        )}
-
-        {/* ── 3. Live activity across every tenant ── */}
-        <View>
-          <SectionHeader title="Today, everywhere" />
-          <Surface elevation="sm" padded="lg" style={{ gap: spacing.md }}>
-            <StatGrid
-              items={[
-                { label: 'Washes today', value: String(stats.washes_today ?? 0) },
-                { label: 'Taken (UGX)', value: compact(Number(stats.gross_today || 0)) },
-                { label: 'Cars open now', value: String(stats.open_jobs ?? 0), tone: Number(stats.open_jobs) > 0 ? 'info' : undefined },
-              ]}
-            />
-            {cashOut > 0 && (
-              <View style={styles.cashNote}>
-                <Icon name="wallet" size={12} color={colors.warning} />
-                <Text style={styles.cashNoteText}>
-                  UGX {ugx(cashOut)} is with workers across all branches, not yet handed in.
-                </Text>
+            {/* ── Today, everywhere ── */}
+            <SectionHead title="Today, everywhere" />
+            <Card>
+              <View style={s.three}>
+                <Fig value={String(washesToday)} label="Washes today" />
+                <Fig value={compact(takenToday)} label="Taken (UGX)" />
+                <Fig value={String(openNow)} label="Cars open now" color={tint.info.text} />
               </View>
-            )}
-          </Surface>
-        </View>
+              {cashOut > 0 ? (
+                <View style={s.note}>
+                  <Icon name="money-bill-wave" size={16} color={tint.warning.text} />
+                  <Text style={s.noteText}>UGX {ugx(cashOut)} is with workers across all branches, not yet handed in.</Text>
+                </View>
+              ) : null}
+            </Card>
 
-        <View>
-          <SectionHeader title="Last 14 days" />
-          <Surface elevation="sm" padded="lg">
-            <TrendChart
-              points={trendPoints}
-              valuePrefix="UGX "
-              emptyLabel="No washes anywhere in the last two weeks."
-            />
-          </Surface>
-        </View>
-
-        <View>
-          <SectionHeader
-            title="This month"
-            action={delta !== null ? `${delta >= 0 ? '▲' : '▼'} ${Math.abs(delta)}% vs last month` : undefined}
-          />
-          <Surface elevation="sm" padded="lg" style={{ gap: spacing.md }}>
-            <StatGrid
-              items={[
-                { label: 'Washes', value: String(stats.washes_this_month ?? 0) },
-                { label: 'Gross (UGX)', value: compact(grossMonth) },
-                { label: 'Last month', value: compact(grossLast), muted: true },
-              ]}
-            />
-            {delta !== null && (
-              <Text style={styles.deltaNote}>
-                Compared with the same {dayOfMonth} day{dayOfMonth === 1 ? '' : 's'} of last month, across all organisations.
+            {/* ── Last 14 days ── */}
+            <SectionHead title="Last 14 days" />
+            <Card>
+              <Text style={s.hint}>Tap a bar for that day</Text>
+              <Text style={s.picked}>
+                {selDay ? `${dayLabel(selDay.day)} · UGX ${compact(Number(selDay.gross_ugx || 0))} · ${Number(selDay.washes || 0)} washes` : 'No days yet'}
               </Text>
-            )}
-          </Surface>
-        </View>
+              <View style={s.chart}>
+                {values.map((v, i) => (
+                  <TouchableOpacity
+                    key={i}
+                    style={s.colSlot}
+                    activeOpacity={0.7}
+                    onPress={() => setPicked(i)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${dayLabel(trend[i].day)}: UGX ${ugx(v)}`}
+                  >
+                    {i === sel ? (
+                      <CssGradient colors={colors.gradientButton2} locations={[0, 1]} angle={180} style={[s.col, { height: `${Math.max(3, (v / max) * 100)}%` as any }]} />
+                    ) : (
+                      <View style={[s.col, s.colOff, { height: `${Math.max(3, (v / max) * 100)}%` as any }]} />
+                    )}
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <View style={s.labels}>
+                {trend.map((d, i) => (
+                  <Text key={i} style={[s.labelText, i === sel && s.labelOn]}>{new Date(String(d.day).slice(0, 10) + 'T00:00:00').getDate()}</Text>
+                ))}
+              </View>
+            </Card>
 
-        {/* ── 4. Who is carrying the platform ── */}
-        <View>
-          <SectionHeader title="Busiest organisations" count={orgItems.length} />
-          {orgItems.length === 0 ? (
-            <Surface elevation="sm" padded="lg">
-              <EmptyState icon="building" title="No organisations yet" message="Onboard your first tenant to see activity here." />
-            </Surface>
-          ) : (
-            <Surface elevation="sm" padded="lg">
-              <RankedBars
-                items={orgItems}
-                valuePrefix="UGX "
-                onPress={(item) => navigation.navigate('Org Detail', { orgId: item.key })}
-              />
-            </Surface>
-          )}
-        </View>
-
-        {/* ── Churn signal ── */}
-        {quiet.length > 0 && (
-          <View style={{ gap: spacing.sm }}>
-            <View>
-              <SectionHeader title="Gone quiet" count={quiet.length} />
-              <Surface elevation="sm" padded="sm" style={styles.listCard}>
-                {quiet.map((o: any, i: number) => {
-                  const d = daysSince(o.last_activity_at);
-                  return (
-                    <ListRow
+            {/* ── Trials ending soon ── */}
+            {trials.length > 0 ? (
+              <>
+                <SectionHead title="Trials ending soon" count={trials.length} countColor={tint.info.fg} />
+                <Card flush>
+                  {trials.map((o, i) => (
+                    <TouchableOpacity
                       key={o.id}
+                      style={[s.lrow, i > 0 && s.lrowLine]}
+                      activeOpacity={0.7}
                       onPress={() => navigation.navigate('Org Detail', { orgId: o.id })}
-                      leading="moon"
-                      leadingTone="warning"
-                      title={o.name}
-                      subtitle={d == null ? 'Never processed a wash' : `Last wash ${d} days ago`}
-                      last={i === quiet.length - 1}
-                    />
-                  );
-                })}
-              </Surface>
-            </View>
-            <Hint>Active organisations with no washes in the last 7 days — usually the first sign of churn.</Hint>
-          </View>
+                      accessibilityRole="button"
+                    >
+                      <Initials name={o.name} index={i} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={s.lTitle} numberOfLines={1}>{o.name}</Text>
+                        <Text style={s.lSub} numberOfLines={1}>{Number(o.branch_count || 0)} branch{Number(o.branch_count) === 1 ? '' : 'es'} · trial</Text>
+                      </View>
+                      <Pill
+                        tone={o.left <= 0 ? 'bad' : o.left <= 7 ? 'warn' : 'blue'}
+                        label={o.left <= 0 ? 'Ended' : `${o.left} day${o.left === 1 ? '' : 's'} left`}
+                      />
+                    </TouchableOpacity>
+                  ))}
+                </Card>
+              </>
+            ) : null}
+          </>
         )}
-
-        {/* ── 5. Growth ── */}
-        {onboarding.length > 0 && (
-          <View>
-            <SectionHeader title="New organisations" />
-            <Surface elevation="sm" padded="lg">
-              {onboarding.every((o: any) => Number(o.onboarded || 0) === 0) ? (
-                <EmptyState icon="chart-bar" title="No sign-ups in six months" message="New tenants chart here as you onboard them." />
-              ) : (
-                <MonthBars
-                  height={60}
-                  items={onboarding.map((o: any) => ({
-                    key: o.month,
-                    label: monthLabel(o.month),
-                    value: Number(o.onboarded || 0),
-                  }))}
-                />
-              )}
-            </Surface>
-          </View>
-        )}
-
-        {/* ── Scale of the whole thing ── */}
-        <View>
-          <SectionHeader title="Platform size" />
-          <Surface elevation="sm" padded="lg" style={{ gap: spacing.md }}>
-            <StatGrid
-              items={[
-                { label: 'Orgs', value: String(stats.total_orgs ?? 0) },
-                { label: 'Branches', value: String(stats.active_branches ?? 0) },
-                { label: 'Staff', value: String(stats.active_staff ?? 0) },
-                { label: 'Customers', value: String(stats.total_clients ?? 0) },
-              ]}
-            />
-            {Number(stats.suspended_orgs) > 0 && (
-              <Badge label={`${stats.suspended_orgs} suspended`} tone="error" small />
-            )}
-          </Surface>
-        </View>
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.bg },
-  scroll: { flex: 1 },
-  body: { padding: spacing.lg, paddingBottom: spacing.xxxl, gap: spacing.xl },
+/** One of the three "Today" figures. */
+function Fig({ value, label, color }: { value: string; label: string; color?: string }) {
+  return (
+    <View style={{ flex: 1 }}>
+      <Text style={[s.figValue, color ? { color } : null]} numberOfLines={1} adjustsFontSizeToFit>{value}</Text>
+      <Text style={s.figLabel}>{label}</Text>
+    </View>
+  );
+}
 
-  listCard: { paddingHorizontal: spacing.md },
+const s = StyleSheet.create({
+  root: { flex: 1, backgroundColor: soft.page },
+  body: { paddingHorizontal: 16, paddingTop: 6, paddingBottom: 28, gap: 14 },
 
-  cashNote: {
-    flexDirection: 'row', alignItems: 'flex-start', gap: 8,
-    backgroundColor: colors.warningSoft, borderRadius: radii.sm,
-    paddingVertical: 10, paddingHorizontal: spacing.md,
-  },
-  cashNoteText: { flex: 1, fontSize: font.sm, color: colors.warningText, fontWeight: weight.semibold, lineHeight: 18 },
+  cardLabel: { fontSize: 12, ...jk.semibold, color: colors.textSecondary },
+  mrrRow: { flexDirection: 'row', alignItems: 'baseline', gap: 8, marginTop: 6, marginBottom: 6 },
+  mrrUnit: { fontSize: 16, ...jk.bold, color: colors.textSecondary },
+  mrr: { flexShrink: 1, fontSize: 40, lineHeight: 46, ...jk.heavy, color: colors.text, ...staffType.tabular },
 
-  deltaNote: { fontSize: font.xs, color: colors.textMuted, lineHeight: 16 },
+  three: { flexDirection: 'row', gap: 6 },
+  figValue: { fontSize: 26, lineHeight: 32, ...jk.heavy, color: colors.text, ...staffType.tabular },
+  figLabel: { fontSize: 12, ...jk.medium, color: colors.textSecondary },
+  note: { flexDirection: 'row', gap: 10, alignItems: 'flex-start', backgroundColor: tint.warning.bg, borderRadius: 14, padding: 12, marginTop: 16 },
+  noteText: { flex: 1, fontSize: 13, lineHeight: 18, ...jk.semibold, color: tint.warning.text },
+
+  hint: { fontSize: 12, ...jk.medium, color: colors.textSecondary, marginBottom: 10 },
+  picked: { fontSize: 13, ...jk.heavy, color: colors.text, marginBottom: 8 },
+  chart: { flexDirection: 'row', alignItems: 'flex-end', gap: 5, height: 140 },
+  colSlot: { flex: 1, height: '100%', justifyContent: 'flex-end' },
+  col: { width: '100%', borderTopLeftRadius: 6, borderTopRightRadius: 6, borderBottomLeftRadius: 2, borderBottomRightRadius: 2 },
+  colOff: { backgroundColor: '#D9DFEC' },
+  labels: { flexDirection: 'row', gap: 5, marginTop: 8 },
+  labelText: { flex: 1, textAlign: 'center', fontSize: 11, ...jk.medium, color: colors.textSecondary },
+  labelOn: { ...jk.bold, color: colors.text },
+
+  lrow: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 64, paddingVertical: 4 },
+  lrowLine: { borderTopWidth: 1, borderTopColor: soft.line },
+  lTitle: { fontSize: 15, ...jk.bold, color: colors.text },
+  lSub: { fontSize: 12, ...jk.medium, color: colors.textSecondary, marginTop: 2 },
 });

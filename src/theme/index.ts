@@ -363,6 +363,26 @@ export const webFrame = {
 };
 
 /**
+ * The worker's job offer (src/screens/worker): an amber countdown on a warm
+ * card, a number-plate box, and the greyed "closed" version once it is gone.
+ */
+export const offer = {
+  ring: '#F59E0B',
+  ringTrack: '#F7E7C4',
+  card: '#FFFBF0',
+  border: '#F3C875',
+  plateBg: '#FFF4CF',
+  plateInk: '#1B1233',
+  pill: '#FFEBC2',
+  pillText: '#9A5A00',
+  waitText: '#A66300',
+  closedRing: '#9A9FB0',
+  closedTrack: '#E6E8EF',
+  closedCard: '#ECEEF3',
+  duty: '#16A06A',
+};
+
+/**
  * Plus Jakarta Sans, the admin pages' typeface (loaded in App.tsx). Each
  * weight is its own font file, so a style takes one of these INSTEAD of a
  * `fontWeight` — on Android a weight on a custom family falls back to the

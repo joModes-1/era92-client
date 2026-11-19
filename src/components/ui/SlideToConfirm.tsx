@@ -22,7 +22,7 @@ const THRESHOLD = 0.8;
  * Screen readers get a plain button.
  */
 export default function SlideToConfirm({
-  label, accessibilityLabel, onConfirm, tone = 'brand', loading = false, disabled = false,
+  label, accessibilityLabel, onConfirm, tone = 'brand', loading = false, disabled = false, showHint = true, outlined = false,
 }: {
   /** "Slide to finish washing" */
   label: string;
@@ -32,6 +32,10 @@ export default function SlideToConfirm({
   tone?: 'brand' | 'success';
   loading?: boolean;
   disabled?: boolean;
+  /** The "or press and hold" line under the track. */
+  showHint?: boolean;
+  /** A violet outline round the track, as on the job-offer cards. */
+  outlined?: boolean;
 }) {
   const [width, setWidth] = useState(0);
   const x = useRef(new Animated.Value(0)).current;
@@ -118,7 +122,7 @@ export default function SlideToConfirm({
         accessibilityState={{ disabled: disabled || loading, busy: loading }}
         accessibilityActions={[{ name: 'activate' }]}
         onAccessibilityAction={(e) => { if (e.nativeEvent.actionName === 'activate' && !disabled && !loading) fire(); }}
-        style={styles.trackWrap}
+        style={[styles.trackWrap, outlined && styles.outlined]}
       >
         {tone === 'brand' ? (
           <CssGradient
@@ -133,13 +137,14 @@ export default function SlideToConfirm({
           <View style={[styles.track, { backgroundColor: colors.success }]}>{content}</View>
         )}
       </View>
-      <Text style={styles.hint}>or press and hold</Text>
+      {showHint ? <Text style={styles.hint}>or press and hold</Text> : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   trackWrap: { borderRadius: 16, overflow: 'hidden' },
+  outlined: { borderWidth: 2, borderColor: colors.primary },
   track: {
     height: KNOB + INSET * 2,
     borderRadius: 16,
